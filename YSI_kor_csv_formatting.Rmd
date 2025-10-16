@@ -1,0 +1,494 @@
+---
+title: 'Processing YSI data downloads'
+author: "Kelly Loria"
+date: "`r Sys.Date()`"
+output:
+   html_document:
+    theme: united
+    highlight: tango
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{=html}
+<style type="text/css">
+body, td {font-size: 12px;}
+code.r{font-size: 8px;}
+pre {font-size: 10px}
+</style>
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = F, message = F)
+#knitr::opts_knit$set(root.dir = 'C/Users/kloria/Documents/Davis_data_exploration/')
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\n \\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+
+```
+
+```{r, echo = F, message = F}
+### Packages
+
+library(tidyverse)
+library(lubridate)
+library(dataRetrieval)
+library(viridis)
+library(ggplot2)
+library(plotly)
+
+
+site_colors <- c(
+  "ophir creek" = "#7d5ba6",
+  "wc usgs gage" = "#4287f5",
+  "winters up" = "#7fc5f0",
+  "Davis" = "#d9cb7c",
+  "browns creek" = "#c94d00", 
+  "browns creek sub"  = "#bd772d"
+)
+
+site_colors2 <- c(
+  "ophir" = "#7d5ba6",
+  "winters_usgs" = "#4287f5",
+  "winters_up" = "#7fc5f0",
+  "davis" = "#d9cb7c",
+  "browns" = "#c94d00", 
+  "browns_sub"  = "#bd772d"
+)
+
+site_list<- c(
+  "ophir creek",
+  "wc usgs gage",
+  "winters up",
+  "Davis",
+  "browns creek",
+  "browns creek sub")
+
+
+```
+
+
+```{r, eval=TRUE, echo = F, error=FALSE, warning=FALSE, message=FALSE}
+##### Function for water year:
+# fxn for water year
+water_year <- function(data) {
+  data %>%
+    mutate(date = ymd(date)) %>%
+    mutate(WaterYear = if_else(month(date) >= 10, year(date) + 1, year(date)))
+}
+```
+
+
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+
+library(readr)
+library(dplyr)
+library(stringr)
+library(lubridate)
+
+# --- Read file (no header because header row is inside file) ---
+df <- read_csv("/Users/kellyloria/Documents/DRI /ERDC_Davis_Fire/Raw_data/OLD_YSI_DSS_data_100625.csv",
+               col_names = FALSE, show_col_types = FALSE)
+
+# find header row and keep rows after it
+header_row <- which(grepl("TIME \\(h:mm:ss tt\\)", df[[1]]))[1]
+df <- df[(header_row + 1):nrow(df), ]
+
+# select first 25 columns and up to 1200 rows
+df <- df[1:min(1200, nrow(df)), 1:25]
+
+# assign your column names (trimmed to available columns)
+cols_names <- c("time", "date", "file_name", "site", "fault_code", "barometer_mmHg", 
+                "Cond._scm", "SPC_dsmc", "TDS_mgL", "sal_PSU", "NLF_COND_scm", 
+                "depth_m", "vert_position_m", "pressure_PSI", "DO_sat", "DO_mgL", 
+                "lat.", "long.", "altitude_m", "ORP_MV", "pH", "pH_MV", 
+                "TEMP_C", "turbidity_FNU", "TSS_mgL")
+colnames(df)[1:min(length(cols_names), ncol(df))] <- cols_names[1:min(length(cols_names), ncol(df))]
+
+# --- Clean out metadata rows and empty rows ---
+df_clean <- df %>%
+  filter(!grepl("MEAN VALUE:|STANDARD DEVIATION:|SENSOR SERIAL NUMBER:|FILE CREATED:|Kor MEASUREMENT|^$",
+                as.character(time), ignore.case = TRUE)) %>%
+  filter(!grepl("TIME \\(h:mm:ss tt\\)", as.character(time))) %>%
+  filter(rowSums(. == "" | is.na(.)) < ncol(.))
+
+
+###
+
+# --- Parse numeric columns safely (optional) ---
+numeric_cols <- c("fault_code", "barometer_mmHg", "Cond._scm", "SPC_dsmc", "TDS_mgL",
+                  "sal_PSU", "NLF_COND_scm", "depth_m", "vert_position_m", "pressure_PSI",
+                  "DO_sat", "DO_mgL", "lat.", "long.", "altitude_m", "ORP_MV", "pH",
+                  "pH_MV", "TEMP_C", "turbidity_FNU", "TSS_mgL")
+for (col in numeric_cols) {
+  if (col %in% names(df_clean)) df_clean[[col]] <- suppressWarnings(as.numeric(df_clean[[col]]))
+}
+
+
+library(lubridate)
+library(dplyr)
+
+df_clean <- df_clean %>%
+  mutate(
+    # Ensure date is a string
+    date = as.character(date) %>% str_trim(),
+
+    # Convert any "M/D/YY" to "M/D/20YY" if needed
+    date = ifelse(
+      grepl("^\\d{1,2}/\\d{1,2}/\\d{2}$", date),
+      sub("/(\\d{2})$", "/20\\1", date),
+      date
+    ),
+
+    # Re-parse as Date (this will correctly become 2025-09-24, etc.)
+    date = mdy(date),
+
+    # Ensure time is character and parse it as 12-hour format with AM/PM
+    time = as.character(time),
+    time_parsed = parse_date_time(time, orders = c("I:M:S p")),
+
+    # Combine into a datetime (Pacific Time)
+    datetime = as.POSIXct(paste(date, format(time_parsed, "%H:%M:%S")),
+                          tz = "America/Los_Angeles"),
+
+    # Overwrite time with the formatted 12-hour clock if you want to keep human-readable version
+    time = format(time_parsed, "%I:%M:%S %p")
+  ) %>%
+  # create stream from file_name (same as you had)
+  mutate(
+    stream = str_extract(as.character(file_name), "(?<=-)[^-]+(?=-[^-]*$)") %>%
+      str_replace_all("%20", " ") %>%
+      str_trim()
+  ) %>%
+
+  # finalize column selection and replace date/time with parsed ones
+  select(stream, datetime, date, time, everything())
+
+
+unique(df_clean$stream)
+
+df_clean_old<-df_clean%>%
+filter(stream %in%site_list) 
+
+```
+
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=10, fig.height=12}
+p <- df_clean %>% 
+  ggplot(aes(x = datetime, y = turbidity_FNU, color = stream))+
+  #geom_abline(slope = 0, intercept = 0, width = 1, alpha = 0.6)+
+  geom_line(alpha = 0.8)+
+  geom_point(aes(x = datetime, y = turbidity_FNU),
+             alpha = 0.8, size = 2)+
+  scale_color_manual(values = site_colors) + theme_minimal() +facet_grid(stream~.)
+
+# Convert to Plotly
+ggplotly(p)
+
+```
+
+
+### new data 
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+
+df <- read_csv("/Users/kellyloria/Documents/DRI /ERDC_Davis_Fire/Raw_data/YSI_KOR_dat_20251003.csv",
+               col_names = FALSE, show_col_types = FALSE)
+
+# find header row and keep rows after it
+header_row <- which(grepl("TIME \\(h:mm:ss tt\\)", df[[1]]))[1]
+df <- df[(header_row + 1):nrow(df), ]
+
+
+# assign your column names (trimmed to available columns)
+cols_names <- c("time", "date", "file_name", "site", "fault_code", "barometer_mmHg", 
+                "Cond._scm", "SPC_dsmc", "TDS_mgL", "sal_PSU", "NLF_COND_scm", 
+                "depth_m", "vert_position_m", "pressure_PSI", "DO_sat", "DO_mgL", 
+                "lat.", "long.", "altitude_m", "ORP_MV", "pH", "pH_MV", 
+                "TEMP_C", "turbidity_FNU", "TSS_mgL")
+colnames(df)[1:min(length(cols_names), ncol(df))] <- cols_names[1:min(length(cols_names), ncol(df))]
+
+# --- Clean out metadata rows and empty rows ---
+df_clean <- df %>%
+  filter(!grepl("MEAN VALUE:|STANDARD DEVIATION:|SENSOR SERIAL NUMBER:|FILE CREATED:|Kor MEASUREMENT|^$",
+                as.character(time), ignore.case = TRUE)) %>%
+  filter(!grepl("TIME \\(h:mm:ss tt\\)", as.character(time))) %>%
+  filter(rowSums(. == "" | is.na(.)) < ncol(.))
+
+
+###
+
+# --- Parse numeric columns safely (optional) ---
+numeric_cols <- c("fault_code", "barometer_mmHg", "Cond._scm", "SPC_dsmc", "TDS_mgL",
+                  "sal_PSU", "NLF_COND_scm", "depth_m", "vert_position_m", "pressure_PSI",
+                  "DO_sat", "DO_mgL", "lat.", "long.", "altitude_m", "ORP_MV", "pH",
+                  "pH_MV", "TEMP_C", "turbidity_FNU", "TSS_mgL")
+for (col in numeric_cols) {
+  if (col %in% names(df_clean)) df_clean[[col]] <- suppressWarnings(as.numeric(df_clean[[col]]))
+}
+
+
+library(lubridate)
+library(dplyr)
+
+df_clean <- df_clean %>%
+  mutate(
+    # Ensure date is a string
+    date = as.character(date) %>% str_trim(),
+
+    # Convert any "M/D/YY" to "M/D/20YY" if needed
+    date = ifelse(
+      grepl("^\\d{1,2}/\\d{1,2}/\\d{2}$", date),
+      sub("/(\\d{2})$", "/20\\1", date),
+      date
+    ),
+
+    # Re-parse as Date (this will correctly become 2025-09-24, etc.)
+    date = mdy(date),
+
+    # Ensure time is character and parse it as 12-hour format with AM/PM
+    time = as.character(time),
+    time_parsed = parse_date_time(time, orders = c("I:M:S p")),
+
+    # Combine into a datetime (Pacific Time)
+    datetime = as.POSIXct(paste(date, format(time_parsed, "%H:%M:%S")),
+                          tz = "America/Los_Angeles"),
+
+    # Overwrite time with the formatted 12-hour clock if you want to keep human-readable version
+    time = format(time_parsed, "%I:%M:%S %p")
+  ) %>%
+  # create stream from file_name (same as you had)
+  mutate(
+    stream = str_extract(as.character(file_name), "(?<=-)[^-]+(?=-[^-]*$)") %>%
+      str_replace_all("%20", " ") %>%
+      str_trim()
+  ) %>%
+
+  # finalize column selection and replace date/time with parsed ones
+  select(stream, datetime, date, time, everything())
+
+
+unique(df_clean$stream)
+
+df_clean_1003<-df_clean%>%
+filter(stream %in%site_list) 
+
+
+
+# Save the processed data
+# write.csv(df_clean, "YSI_KOR_dat_20251003_processed.csv", row.names = FALSE)
+
+```
+
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=10, fig.height=12}
+p <- df_clean_1003 %>% 
+  ggplot(aes(x = datetime, y = turbidity_FNU, color = stream))+
+  #geom_abline(slope = 0, intercept = 0, width = 1, alpha = 0.6)+
+  geom_line(alpha = 0.8)+
+  geom_point(aes(x = datetime, y = turbidity_FNU),
+             alpha = 0.8, size = 2)+
+  scale_color_manual(values = site_colors) + theme_minimal() +facet_grid(stream~.)
+
+# Convert to Plotly
+ggplotly(p)
+
+```
+
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+
+df <- read_csv("/Users/kellyloria/Documents/DRI /ERDC_Davis_Fire/Raw_data/YSI_KOR_dat_20251008.csv",
+               col_names = FALSE, show_col_types = FALSE)
+
+# find header row and keep rows after it
+header_row <- which(grepl("TIME \\(h:mm:ss tt\\)", df[[1]]))[1]
+df <- df[(header_row + 1):nrow(df), ]
+
+
+# assign your column names (trimmed to available columns)
+cols_names <- c("time", "date", "file_name", "site", "fault_code", "barometer_mmHg", 
+                "Cond._scm", "SPC_dsmc", "TDS_mgL", "sal_PSU", "NLF_COND_scm", 
+                "depth_m", "vert_position_m", "pressure_PSI", "DO_sat", "DO_mgL", 
+                "lat.", "long.", "altitude_m", "ORP_MV", "pH", "pH_MV", 
+                "TEMP_C", "turbidity_FNU", "TSS_mgL")
+colnames(df)[1:min(length(cols_names), ncol(df))] <- cols_names[1:min(length(cols_names), ncol(df))]
+
+# --- Clean out metadata rows and empty rows ---
+df_clean <- df %>%
+  filter(!grepl("MEAN VALUE:|STANDARD DEVIATION:|SENSOR SERIAL NUMBER:|FILE CREATED:|Kor MEASUREMENT|^$",
+                as.character(time), ignore.case = TRUE)) %>%
+  filter(!grepl("TIME \\(h:mm:ss tt\\)", as.character(time))) %>%
+  filter(rowSums(. == "" | is.na(.)) < ncol(.))
+
+
+###
+
+# --- Parse numeric columns safely (optional) ---
+numeric_cols <- c("fault_code", "barometer_mmHg", "Cond._scm", "SPC_dsmc", "TDS_mgL",
+                  "sal_PSU", "NLF_COND_scm", "depth_m", "vert_position_m", "pressure_PSI",
+                  "DO_sat", "DO_mgL", "lat.", "long.", "altitude_m", "ORP_MV", "pH",
+                  "pH_MV", "TEMP_C", "turbidity_FNU", "TSS_mgL")
+for (col in numeric_cols) {
+  if (col %in% names(df_clean)) df_clean[[col]] <- suppressWarnings(as.numeric(df_clean[[col]]))
+}
+
+
+library(lubridate)
+library(dplyr)
+
+df_clean <- df_clean %>%
+  mutate(
+    # Ensure date is a string
+    date = as.character(date) %>% str_trim(),
+
+    # Convert any "M/D/YY" to "M/D/20YY" if needed
+    date = ifelse(
+      grepl("^\\d{1,2}/\\d{1,2}/\\d{2}$", date),
+      sub("/(\\d{2})$", "/20\\1", date),
+      date
+    ),
+
+    # Re-parse as Date (this will correctly become 2025-09-24, etc.)
+    date = mdy(date),
+
+    # Ensure time is character and parse it as 12-hour format with AM/PM
+    time = as.character(time),
+    time_parsed = parse_date_time(time, orders = c("I:M:S p")),
+
+    # Combine into a datetime (Pacific Time)
+    datetime = as.POSIXct(paste(date, format(time_parsed, "%H:%M:%S")),
+                          tz = "America/Los_Angeles"),
+
+    # Overwrite time with the formatted 12-hour clock if you want to keep human-readable version
+    time = format(time_parsed, "%I:%M:%S %p")
+  ) %>%
+  # create stream from file_name (same as you had)
+  mutate(
+    stream = str_extract(as.character(file_name), "(?<=-)[^-]+(?=-[^-]*$)") %>%
+      str_replace_all("%20", " ") %>%
+      str_trim()
+  ) %>%
+
+  # finalize column selection and replace date/time with parsed ones
+  select(stream, datetime, date, time, everything())
+
+
+unique(df_clean$stream)
+
+df_clean_1008<-df_clean%>%
+filter(stream %in%site_list) 
+
+###
+
+# Save the processed data
+# write.csv(df_clean, "YSI_KOR_dat_20251003_processed.csv", row.names = FALSE)
+
+```
+
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=10, fig.height=12}
+p <- df_clean_1008 %>% 
+  filter(stream %in%site_list) %>%
+  ggplot(aes(x = datetime, y = turbidity_FNU, color = stream))+
+  #geom_abline(slope = 0, intercept = 0, width = 1, alpha = 0.6)+
+  geom_line(alpha = 0.8)+
+  geom_point(aes(x = datetime, y = turbidity_FNU),
+             alpha = 0.8, size = 2)+
+  scale_color_manual(values = site_colors) + theme_minimal() +facet_grid(stream~.)
+
+# Convert to Plotly
+ggplotly(p)
+
+```
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+
+df_all <- df_clean_old %>%
+  rbind(df_clean_1003)%>%
+  rbind(df_clean_1008)
+
+### final format 
+df_all <- df_all %>%
+  # create dummy column for Creek to line up hydroclimate data
+  mutate(site_lab = case_when(
+   # stream== "Davis" ~ "davis", 
+    stream == "ophir creek" ~ "ophir",
+    stream == "wc usgs gage" ~ "winters_usgs",
+    stream == "winters up" ~ "winters_up",
+    stream == "browns creek" ~ "browns", 
+    stream == "browns creek sub" ~ "browns_sub"))%>%
+  mutate(USGS_gage = case_when(
+    site_lab== "davis" ~ "davis", 
+    site_lab == "ophir" ~ "ophir",
+    site_lab == "winters_usgs" ~ "winters",
+    site_lab == "winters_up" ~ "winters",
+    site_lab == "browns" ~ "winters", 
+    site_lab == "browns_sub" ~ "winters")) %>%
+  select("site_lab","USGS_gage", "date",  "datetime", "lat.", "long.", "altitude_m","barometer_mmHg", "Cond._scm", 
+         "SPC_dsmc","TDS_mgL", "sal_PSU","NLF_COND_scm","depth_m",
+         "vert_position_m","pressure_PSI", "DO_sat", "DO_mgL",
+         "ORP_MV", "pH", "pH_MV", "TEMP_C", "turbidity_FNU")
+
+
+### macro invert use at headwaters 2025-09-15
+df_all <- df_all %>%
+  filter(date < as.Date("2025-09-14")|date > as.Date("2025-09-15"))
+
+df_all <- df_all %>%
+  filter(!(site_lab == "winters_usgs" & date < as.Date("2025-08-25")))
+
+df_all$site_lab[
+  df_all$site_lab == "winters_up" &
+  df_all$date == as.Date("2025-04-02") &
+  df_all$datetime == as.POSIXct("2025-04-02 09:49:28")
+] <- "browns"
+
+```
+
+
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=10, fig.height=12}
+p <- df_all %>% 
+  ggplot(aes(x = datetime, y = altitude_m, color = site_lab))+
+  #geom_abline(slope = 0, intercept = 0, width = 1, alpha = 0.6)+
+  geom_line(alpha = 0.8)+
+  geom_point(aes(x = datetime, y = altitude_m),
+             alpha = 0.8, size = 2)+
+  scale_color_manual(values = site_colors2) + theme_minimal() 
+
+# Convert to Plotly
+ggplotly(p)
+
+
+p <- df_all %>% 
+  ggplot(aes(color = site_lab))+
+  geom_point(aes(y = lat., x = long.),
+             alpha = 0.8, size = 2)+
+  scale_color_manual(values = site_colors2) + theme_minimal() 
+
+# Convert to Plotly
+ggplotly(p)
+
+
+```
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+
+# Save the processed data
+# write.csv(df_all, "/Users/kellyloria/Documents/DRI\ /ERDC_Davis_Fire/Processes_data/YSI_KOR_dat_20251003_processed.csv", row.names = FALSE)
+
+```

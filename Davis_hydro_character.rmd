@@ -1,0 +1,1039 @@
+---
+title: 'Dvais Fire hydro-climate characteristics'
+author: "Kelly Loria"
+date: "`r Sys.Date()`"
+output:
+   html_document:
+    theme: united
+    highlight: tango
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{=html}
+<style type="text/css">
+body, td {font-size: 13px;}
+code.r{font-size: 9px;}
+pre {font-size: 11px}
+</style>
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = F, message = F)
+#knitr::opts_knit$set(root.dir = '/Users/kellyloria/Documents/Publications/')
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\n \\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+
+```
+
+
+```{r, include=FALSE}
+library(snotelr)
+library(tidyverse)
+library(lubridate)
+library(readr)
+library(ggpubr)
+library(ggplot2)
+library(ggdist)
+library(dataRetrieval)
+library(lme4)
+library(lmerTest)
+library(MuMIn)
+library(plotly)
+
+library(ggpmisc)
+
+```
+
+### Calculating hydrology characteristics for stream flow data
+
+### 1. Gage IDS
+
+Check available gage data from USGS stream gage network [USGS](https://maps.waterdata.usgs.gov/mapper/index.html)
+
+```{r eval=TRUE, echo = TRUE, error=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+# identify and scrape data from USGS gages for target sites (BW and GB)
+
+# Define the site numbers for "GB" and "BW"
+siteNo_ophir <- "10348520"
+siteNo_winters <- "10348570"
+siteNo_davis <- "10348550"
+
+site_colors <- c(
+  "ophir" = "#7d5ba6",
+  "winters" = "#4287f5",
+  "winters upstream" = "#7fc5f0",
+  "davis" = "#d9cb7c",
+  "browns" = "#c94d00", 
+  "browns sub"  = "#bd772d"
+)
+
+```
+
+
+```{r eval=TRUE, echo = TRUE, error=FALSE, warning=FALSE, message=FALSE, include=F}
+
+winter_data_info <- whatNWISdata(siteNumbers = siteNo_winters)
+winter_data_info
+```
+
+
+```{r eval=TRUE, echo = TRUE, error=FALSE, warning=FALSE, message=FALSE, include=F}
+
+ophir_data_info <- whatNWISdata(siteNumbers = siteNo_ophir)
+ophir_data_info
+```
+
+
+```{r eval=TRUE, echo = TRUE, error=FALSE, warning=FALSE, message=FALSE, include=F}
+
+ophir_data_info <- whatNWISdata(siteNumbers = siteNo_davis)
+ophir_data_info
+```
+
+```{r eval=TRUE, echo = TRUE, error=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+
+# Define the parameter codes for flow and stage
+pCode_flow <- "00060"
+pCode_stage <- "00065"
+
+pcodes <- c(pCode_flow, pCode_stage)
+
+
+# Set the start date to "1980-01-01" and end date to today (current date)
+start.date <- "2000-09-30"
+end.date <- Sys.Date()  # Use the current date as the end date
+
+```
+
+#### Download data:
+
+```{r eval=TRUE, echo = TRUE, error=FALSE, warning=FALSE, message=FALSE, include=T}
+flow_data_OP <- readNWISdata(siteNumbers = siteNo_ophir, parameterCd = pcodes, startDate = start.date, endDate = end.date) %>%
+  mutate(site = "ophir", catch = "unburned") %>%
+  dplyr::rename(date = dateTime, dischargeCFS = X_00060_00003) %>%
+  mutate(
+    dischargeCMS = dischargeCFS * 0.0283168,
+    scale_Q = ((dischargeCFS * 0.0283168) / 10.878)) %>%
+    dplyr::select(site, catch, date, dischargeCFS, dischargeCMS, scale_Q)
+
+# View the processed data
+head(flow_data_OP)
+
+range(flow_data_OP$date)
+
+```
+
+
+```{r eval=TRUE, echo = TRUE, error=FALSE, warning=FALSE, message=FALSE, include=T}
+
+flow_data_WI <- readNWISdata(siteNumbers = siteNo_winters, parameterCd = pcodes, startDate = start.date, endDate = end.date) %>%
+  mutate(site = "winters", catch = "burned") %>%
+  dplyr::rename(date = dateTime, dischargeCFS = X_00060_00003) %>%
+  mutate(
+    dischargeCMS = dischargeCFS * 0.0283168,
+    scale_Q = ((dischargeCFS * 0.0283168) / 10.878)) %>%
+    dplyr::select(site, catch, date, dischargeCFS, dischargeCMS, scale_Q)
+
+# View the processed data
+head(flow_data_WI)
+range(flow_data_WI$date)
+
+```
+
+
+```{r eval=TRUE, echo = TRUE, error=FALSE, warning=FALSE, message=FALSE, include=T}
+flow_data_DA <- readNWISdata(siteNumbers = siteNo_davis, parameterCd = pcodes, startDate = start.date, endDate = end.date) %>%
+  mutate(site = "davis", catch = "burned") %>%
+  dplyr::rename(date = dateTime, dischargeCFS = X_00060_00003) %>%
+  mutate(
+    dischargeCMS = dischargeCFS * 0.0283168,
+    scale_Q = ((dischargeCFS * 0.0283168) / 10.878)) %>%
+    dplyr::select(site, catch, date, dischargeCFS, dischargeCMS, scale_Q)
+
+# View the processed data
+head(flow_data_DA)
+
+range(flow_data_DA$date)
+
+```
+
+
+
+``` {r, echo = F, fig.width=10, fig.height=4, fig.align='center'}
+# Plotting for each site
+plot <- 
+  rbind(flow_data_OP, flow_data_WI, flow_data_DA) %>%
+  ggplot(aes(y = dischargeCMS, x = date, color = site)) +
+    geom_line(alpha = 0.8) +
+  scale_color_manual(values = site_colors) +
+  labs(y = "Flow (cms)", color = "Site") +
+  guides(shape = "none") + 
+  facet_grid(site~., scales="free") +
+  theme_minimal()
+
+ggplotly(plot)
+# Save the plot as a file (e.g., PNG)
+# ggsave("exceedence_probability_vs_discharge.png", plot, width = 4, height = 3, dpi = 300)
+```
+
+
+```{r, echo=FALSE, include =F}
+
+# ggsave(plot = plot, filename = paste("./Davis_hydrograph.png",sep=""),width=9.25,height=4.5,dpi=300)
+
+```
+
+
+### 2. Hydrologic thresholds?
+
+### Very different flow regimes, look at "baseflow partitioning".
+
+#### Baseflow separation based on EcoHydRology baseflow function:
+
+<http://cran.nexr.com/web/packages/EcoHydRology/EcoHydRology.pdf>
+
+```{r, BaseflowSeparation fxn, include=FALSE}
+
+# BaseflowSeparation function
+# ---------------------------
+# Separates streamflow into baseflow (bt) and quickflow (qft)
+# using an iterative filter method.
+# 
+# Arguments:
+#   streamflow        Numeric vector of streamflow values.
+#   filter_parameter  Numeric between 0 and 1 controlling smoothing (default = 0.925).
+#   passes            Number of filtering passes (default = 3).
+#
+# Returns:
+#   A data frame with columns:
+#       bt   = estimated baseflow component
+#       qft  = estimated quickflow component
+
+BaseflowSeparation <- function(streamflow, filter_parameter = 0.925, passes = 3) {
+  
+  # Create vectors for start/end indices for each filtering pass
+  suppressWarnings(
+    Ends <- c(1, length(streamflow)) * rep(1, (passes + 1))
+  )
+  
+  # Adjustments to start index for each pass (1, -1, 1, -1, ...)
+  suppressWarnings(
+    AddToStart <- c(1, -1) * rep(1, passes)
+  )
+  
+  # btP = baseflow estimate from the previous pass (start as raw streamflow)
+  btP <- streamflow
+  
+  # qft = quickflow vector (initially empty)
+  qft <- vector(length = length(streamflow))
+  
+  # bt = baseflow vector (initially empty)
+  bt <- vector(length = length(streamflow))
+  
+  # Initial guess for baseflow at time step 1:
+  # If first flow is below 25th percentile → use it directly
+  # Otherwise → start with mean(streamflow) / 1.5
+  bt[1] <- if (streamflow[1] < quantile(streamflow, 0.25)) {
+    streamflow[1]
+  } else {
+    mean(streamflow) / 1.5
+  }
+  
+  # Main loop over passes
+  for (j in 1:passes) {
+    
+    # Loop over all time steps for this pass
+    for (i in (Ends[j] + AddToStart[j]) : Ends[j + 1]) {
+      
+      # Compute candidate baseflow from recursive filter equation
+      candidate <- filter_parameter * bt[i - AddToStart[j]] +
+                   ((1 - filter_parameter) / 2) * (btP[i] + btP[i - AddToStart[j]])
+      
+      # If candidate > original streamflow → cap at streamflow
+      if (candidate > btP[i]) {
+        bt[i] <- btP[i]
+      } else {
+        bt[i] <- candidate
+      }
+      
+      # Quickflow = streamflow - baseflow
+      qft[i] <- streamflow[i] - bt[i]
+    }
+    
+    # After each pass (except last), update btP and refine end values
+    if (j < passes) {
+      btP <- bt
+      
+      # Refine baseflow at end of series
+      bt[Ends[j + 1]] <- if (streamflow[Ends[j + 1]] < mean(btP)) {
+        streamflow[Ends[j + 1]] / 1.2
+      } else {
+        mean(btP)
+      }
+    }
+  }
+  
+  # Return data frame with baseflow and quickflow
+  f <- data.frame(bt, qft)
+  return(f)
+}
+
+```
+
+#### Estimate baseflow:
+
+```{r, echo=F, include=FALSE}
+# Ophir #
+flow_data_OP <- na.omit(flow_data_OP)
+
+bfs_OP<-BaseflowSeparation(flow_data_OP$dischargeCMS, passes=3)
+bfs_OP[,1] <- as.numeric(bfs_OP[,1])
+
+flow_data_OP <- cbind(flow_data_OP, bfs_OP)
+
+```
+
+
+
+```{r, echo=F, include=FALSE}
+# winters #
+flow_data_WI <- na.omit(flow_data_WI)
+
+bfs_WI<-BaseflowSeparation(flow_data_WI$dischargeCMS, passes=3)
+bfs_WI[,1] <- as.numeric(bfs_WI[,1])
+
+flow_data_WI <- cbind(flow_data_WI, bfs_WI)
+
+```
+
+
+```{r, echo=F, include=FALSE}
+# davis #
+flow_data_DA <- na.omit(flow_data_DA)
+
+bfs_DA<-BaseflowSeparation(flow_data_DA$dischargeCMS, passes=3)
+bfs_DA[,1] <- as.numeric(bfs_DA[,1])
+
+flow_data_DA <- cbind(flow_data_DA, bfs_DA)
+
+```
+
+### Visualize hydrograph and baseflow components:
+
+
+```{r, echo=FALSE, fig.width=10, fig.height=4, fig.align='center'}
+# Plotting for each site
+bt_plot_OP <- ggplot(data = flow_data_OP) + 
+  geom_line(aes(y = dischargeCMS, x = date, color = "Streamflow")) +
+  geom_line(aes(y = bt, x = date, color = "Baseflow")) +
+  geom_line(aes(y = qft, x = date, color = "Quickflow")) +
+  scale_y_continuous(labels = scales::number_format(unit = "m³/s/(km)")) +
+  labs(color = "Components", x = "Date (month-year)", y = expression(Flow~(m^3~s^-1~km^-1))) +
+  scale_color_manual(values = c("Streamflow" = "black", "Baseflow" = "#B51963", "Quickflow" = "#0073E6")) +
+  ggtitle("Ophir Creek") +
+  scale_x_datetime(date_breaks = "8 months", date_labels = "%b-%y") +
+  theme_minimal() +
+  theme(legend.position = NULL)
+
+# Remove legend
+bt_plot_OP <- bt_plot_OP + guides(color = FALSE)
+
+# get correlations between stream flow and bt as well as qft
+OP_flow_bt <- lm(dischargeCMS~bt, data=flow_data_OP)
+summary(OP_flow_bt)
+r_gsquared_bt <- round(summary(OP_flow_bt)$r.squared, 2)
+
+OP_flow_qft <- lm(dischargeCMS~qft, data=flow_data_OP)
+summary(OP_flow_qft)
+r_gsquared_qt <- round(summary(OP_flow_qft)$r.squared, 2)
+
+flow_plot_OP <- ggplot(data=flow_data_OP) + 
+   geom_point(data = flow_data_OP, aes(y = dischargeCMS, x = bt, color = "Baseflow, R² = 0.85"), alpha = 0.5) +
+  geom_point(data = flow_data_OP, aes(y = dischargeCMS, x = qft, color = "Quickflow, R² = 0.89"), alpha = 0.5) +
+  stat_smooth(data = flow_data_OP, aes(y = dischargeCMS, x = bt, color = "Baseflow, R² = 0.85"), method = "lm", se = FALSE) +
+  stat_smooth(data = flow_data_OP, aes(y = dischargeCMS, x = qft, color = "Quickflow, R² = 0.89"), method = "lm", se = FALSE) +
+    labs(color = "Components", x = expression("Component flow" ~(m^3~s^-1~km^-1)), y = expression("Streamflow" ~(m^3~s^-1~km^-1))) +
+  scale_color_manual(values = c("Baseflow, R² = 0.85" = "#B51963", "Quickflow, R² = 0.89" = "#0073E6"))  + ggtitle(" ") + 
+  theme_minimal()+
+  theme(legend.position = "bottom") 
+
+
+library(ggpubr)
+baseflow_plt <- ggarrange(bt_plot_OP, 
+                     flow_plot_OP,
+                     ncol = 2, nrow = 1,
+                     common.legend = T, 
+                     legend = "bottom",
+                     widths = c(.75, 0.35))
+baseflow_plt
+###
+# ggsave(plot = baseflow_plt, filename = paste("./24_BW_flow_separation_plot.png",sep=""),width=10,height=4,dpi=300)
+
+
+```
+
+
+```{r, echo=FALSE, fig.width=10, fig.height=4, fig.align='center'}
+# Plotting for each site
+bt_plot_WI <- ggplot(data = flow_data_WI) + 
+  geom_line(aes(y = dischargeCMS, x = date, color = "Streamflow")) +
+  geom_line(aes(y = bt, x = date, color = "Baseflow")) +
+  geom_line(aes(y = qft, x = date, color = "Quickflow")) +
+  scale_y_continuous(labels = scales::number_format(unit = "m³/s/(km)")) +
+  labs(color = "Components", x = "Date (month-year)", y = expression(Flow~(m^3~s^-1~km^-1))) +
+  scale_color_manual(values = c("Streamflow" = "black", "Baseflow" = "#B51963", "Quickflow" = "#0073E6")) +
+  ggtitle("Winters Creek") +
+  scale_x_datetime(date_breaks = "8 months", date_labels = "%b-%y") +
+  theme_minimal() +
+  theme(legend.position = NULL)
+
+# Remove legend
+bt_plot_WI <- bt_plot_WI + guides(color = FALSE)
+
+# get correlations between stream flow and bt as well as qft
+WI_flow_bt <- lm(dischargeCMS~bt, data=flow_data_WI)
+summary(WI_flow_bt)
+r_gsquared_bt <- round(summary(WI_flow_bt)$r.squared, 2)
+
+WI_flow_qft <- lm(dischargeCMS~qft, data=flow_data_WI)
+summary(WI_flow_qft)
+r_gsquared_qt <- round(summary(WI_flow_qft)$r.squared, 2)
+
+flow_plot_WI <- ggplot(data=flow_data_WI) + 
+   geom_point(data = flow_data_WI, aes(y = dischargeCMS, x = bt, color = "Baseflow, R² = 0.75"), alpha = 0.5) +
+  geom_point(data = flow_data_WI, aes(y = dischargeCMS, x = qft, color = "Quickflow, R² = 0.77"), alpha = 0.5) +
+  stat_smooth(data = flow_data_WI, aes(y = dischargeCMS, x = bt, color = "Baseflow, R² = 0.75"), method = "lm", se = FALSE) +
+  stat_smooth(data = flow_data_WI, aes(y = dischargeCMS, x = qft, color = "Quickflow, R² = 0.77"), method = "lm", se = FALSE) +
+    labs(color = "Components", x = expression("Component flow" ~(m^3~s^-1~km^-1)), y = expression("Streamflow" ~(m^3~s^-1~km^-1))) +
+  scale_color_manual(values = c("Baseflow, R² = 0.75" = "#B51963", "Quickflow, R² = 0.77" = "#0073E6"))  + ggtitle(" ") + 
+  theme_minimal()+
+  theme(legend.position = "bottom") 
+
+
+library(ggpubr)
+baseflow_plt <- ggarrange(bt_plot_WI, 
+                     flow_plot_WI,
+                     ncol = 2, nrow = 1,
+                     common.legend = T, 
+                     legend = "bottom",
+                     widths = c(.75, 0.35))
+baseflow_plt
+###
+# ggsave(plot = baseflow_plt, filename = paste("./24_BW_flow_separation_plot.png",sep=""),width=10,height=4,dpi=300)
+
+
+```
+
+
+
+```{r, echo=FALSE, fig.width=10, fig.height=4, fig.align='center'}
+# Plotting for each site
+bt_plot_DA <- ggplot(data = flow_data_DA) + 
+  geom_line(aes(y = dischargeCMS, x = date, color = "Streamflow")) +
+  geom_line(aes(y = bt, x = date, color = "Baseflow")) +
+  geom_line(aes(y = qft, x = date, color = "Quickflow")) +
+  scale_y_continuous(labels = scales::number_format(unit = "m³/s/(km)")) +
+  labs(color = "Components", x = "Date (month-year)", y = expression(Flow~(m^3~s^-1~km^-1))) +
+  scale_color_manual(values = c("Streamflow" = "black", "Baseflow" = "#B51963", "Quickflow" = "#0073E6")) +
+  ggtitle("Winters Creek") +
+  scale_x_datetime(date_breaks = "8 months", date_labels = "%b-%y") +
+  theme_minimal() +
+  theme(legend.position = NULL)
+
+# Remove legend
+bt_plot_DA <- bt_plot_DA + guides(color = FALSE)
+
+# get correlations between stream flow and bt as well as qft
+DA_flow_bt <- lm(dischargeCMS~bt, data=flow_data_DA)
+summary(DA_flow_bt)
+r_gsquared_bt <- round(summary(DA_flow_bt)$r.squared, 2)
+
+DA_flow_qft <- lm(dischargeCMS~qft, data=flow_data_DA)
+summary(DA_flow_qft)
+r_gsquared_qt <- round(summary(DA_flow_qft)$r.squared, 2)
+
+flow_plot_DA <- ggplot(data=flow_data_DA) + 
+   geom_point(data = flow_data_DA, aes(y = dischargeCMS, x = bt, color = "Baseflow, R² = 0.72"), alpha = 0.5) +
+  geom_point(data = flow_data_DA, aes(y = dischargeCMS, x = qft, color = "Quickflow, R² = 0.87"), alpha = 0.5) +
+  stat_smooth(data = flow_data_DA, aes(y = dischargeCMS, x = bt, color = "Baseflow, R² = 0.72"), method = "lm", se = FALSE) +
+  stat_smooth(data = flow_data_DA, aes(y = dischargeCMS, x = qft, color = "Quickflow, R² = 0.87"), method = "lm", se = FALSE) +
+    labs(color = "Components", x = expression("Component flow" ~(m^3~s^-1~km^-1)), y = expression("Streamflow" ~(m^3~s^-1~km^-1))) +
+  scale_color_manual(values = c("Baseflow, R² = 0.72" = "#B51963", "Quickflow, R² = 0.87" = "#0073E6"))  + ggtitle(" ") + 
+  theme_minimal()+
+  theme(legend.position = "bottom") 
+
+
+library(ggpubr)
+baseflow_plt <- ggarrange(bt_plot_DA, 
+                     flow_plot_DA,
+                     ncol = 2, nrow = 1,
+                     common.legend = T, 
+                     legend = "bottom",
+                     widths = c(.75, 0.35))
+baseflow_plt
+###
+# ggsave(plot = baseflow_plt, filename = paste("./24_BW_flow_separation_plot.png",sep=""),width=10,height=4,dpi=300)
+
+
+```
+
+
+
+#### Flow Duration Analysis: Estimating flow exceedance probabilities
+
+```{r, echo=F, include=FALSE}
+# Processing for both sites using pipes
+flow_rank_OP <- flow_data_OP %>%
+  group_by(site) %>%
+  dplyr::summarize(
+    total_intervals = n(),
+    ranked_scale_discharge = list(sort(scale_Q, decreasing = TRUE)),
+    ranked_discharge = list(sort(dischargeCMS, decreasing = TRUE))
+  ) %>%
+  mutate(
+    exceedence_prob = purrr::map(ranked_discharge, ~ seq(1, length(.), length.out = length(.)) / length(.) * 100)
+  ) %>%
+  unnest(cols = c(ranked_scale_discharge, ranked_discharge, exceedence_prob))
+
+
+flow_rank_WI <- flow_data_WI %>%
+  group_by(site) %>%
+  dplyr::summarize(
+    total_intervals = n(),
+    ranked_scale_discharge = list(sort(scale_Q, decreasing = TRUE)),
+    ranked_discharge = list(sort(dischargeCMS, decreasing = TRUE))
+  ) %>%
+  mutate(
+    exceedence_prob = purrr::map(ranked_discharge, ~ seq(1, length(.), length.out = length(.)) / length(.) * 100)
+  ) %>%
+  unnest(cols = c(ranked_scale_discharge, ranked_discharge, exceedence_prob))
+
+
+flow_rank_DA <- flow_data_DA %>%
+  group_by(site) %>%
+  dplyr::summarize(
+    total_intervals = n(),
+    ranked_scale_discharge = list(sort(scale_Q, decreasing = TRUE)),
+    ranked_discharge = list(sort(dischargeCMS, decreasing = TRUE))
+  ) %>%
+  mutate(
+    exceedence_prob = purrr::map(ranked_discharge, ~ seq(1, length(.), length.out = length(.)) / length(.) * 100)
+  ) %>%
+  unnest(cols = c(ranked_scale_discharge, ranked_discharge, exceedence_prob))
+
+```
+
+``` {r, echo = F, fig.width=10, fig.height=6, fig.align='center'}
+# Plotting for each site
+plot <- 
+  rbind(flow_rank_OP, flow_rank_WI, flow_rank_DA) %>%
+  ggplot(aes(y = ranked_discharge, x = exceedence_prob, color = site)) +
+  geom_line(linewidth=1) + theme_minimal() +
+    scale_y_continuous(
+    trans = "log", 
+    breaks = scales::log_breaks(base = 10),
+    labels = scales::label_number()
+  ) +   scale_color_manual(values = site_colors) +
+  labs(y = "log(Discharge) (cms)", x = "Exceedence probability",
+       title = "log exceedence probabilities") #+ facet_grid(.~Site)
+
+ggplotly(plot)
+# Save the plot as a file (e.g., PNG)
+# ggsave("exceedence_probability_vs_discharge.png", plot, width = 4, height = 3, dpi = 300)
+```
+
+Looks like Davis is the most flashy flow system relative to winters and especially ophir 
+
+
+```{r, echo=FALSE, include =F}
+
+# ggsave(plot = plot, filename = paste("./exceedance_pop.png",sep=""),width=5.25,height=4.5,dpi=300)
+
+
+```
+
+
+### 3. Hydro-climate characterization
+
+
+##### Function for water year:
+
+```{r eval=TRUE, echo = F, error=FALSE, warning=FALSE, message=FALSE}
+# fxn for water year
+water_year <- function(data) {
+  data %>%
+    mutate(date = ymd(date)) %>%
+    mutate(WaterYear = if_else(month(date) >= 10, year(date) + 1, year(date)))
+}
+```
+
+
+
+
+##### Read in data from SNOTEL
+
+Somewhat nearby station coverage 
+
+- Station 652 [Mt. Rose](https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=652)
+
+(Closest to all the streams, but highest elevation)
+
+- Station 615 [Marlette Lake](https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=615)
+
+- Station 1242 [Little Valley](https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=1242&state=nv)
+
+```{r eval=TRUE, echo = F, error=FALSE, warning=FALSE, message=FALSE}
+# read in the sites data for all SNOTEL sites
+target_snow_data <- snotelr::snotel_download(network = "sntl",
+                                             site_id = c(615, 652, 1242), 
+                                             metric = TRUE, internal = TRUE)
+target_snow_data$date<- as.Date(target_snow_data$date)
+
+# transform for water year:
+target_snow_dat<- water_year(target_snow_data)
+
+#Trim for columns 
+target_snow_df <- target_snow_dat %>%
+  filter(WaterYear>2000) %>%
+  mutate(site = case_when(
+    site_id == 615 ~ "marlette",
+    site_id == 652 ~ "mt_rose",
+    site_id == 1242 ~ "little_valley")) %>%
+  dplyr::select(site,site_id, network, state, date, WaterYear, latitude, longitude, elev, 
+                snow_water_equivalent, precipitation_cumulative, snow_depth,
+                temperature_max, temperature_min, temperature_mean, precipitation)
+
+head(target_snow_df)
+```
+
+```{r, echo=FALSE, fig.width=10, fig.height=8, fig.align='center'}
+
+p <- target_snow_df %>% 
+  filter(WaterYear>2013) %>%
+  ggplot(aes(x = date, 
+             y = precipitation, 
+             color = site)) +
+  geom_line(alpha = 0.8) +
+ # scale_color_manual(values = site_colors) +
+  labs(y = "PPT", color = "Site") +
+  guides(shape = "none") + 
+  facet_grid(site~.) +
+  theme_minimal()
+
+# Convert to Plotly
+ggplotly(p)
+
+```
+
+```{r, echo=FALSE, fig.width=10, fig.height=8, fig.align='center'}
+
+p <- target_snow_df %>% 
+  filter(WaterYear>2023) %>%
+  ggplot(aes(x = date, 
+             y = precipitation_cumulative, 
+             color = site)) +
+  geom_line(alpha = 0.8) +
+ # scale_color_manual(values = site_colors) +
+ # labs(y = "PPT", color = "Site") +
+  guides(shape = "none") + 
+  facet_grid(site~.) +
+  theme_minimal()
+
+# Convert to Plotly
+ggplotly(p)
+
+```
+
+
+```{r, echo=FALSE, fig.width=10, fig.height=8, fig.align='center'}
+
+p <- target_snow_df %>% 
+  filter(WaterYear>2023) %>%
+  ggplot(aes(x = date, 
+             y = snow_depth, 
+             color = site)) +
+  geom_line(alpha = 0.8) +
+ # scale_color_manual(values = site_colors) +
+  labs(y = "PPT", color = "Site") +
+  guides(shape = "none") + 
+  facet_grid(site~.) +
+  theme_minimal()
+
+# Convert to Plotly
+ggplotly(p)
+
+```
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+
+davis_ppt <- read.csv("C:/Users/kloria/Documents/Davis_data_exploration/prism_cat.csv")
+#View(davis_data)
+str(davis_ppt)
+
+davis_ppt <- davis_ppt %>%
+  mutate(date= as.Date(Date))
+```
+
+### PRISM 
+800 m resolution ppt for the upper reaches of each creek. 
+
+
+```{r, echo=FALSE, fig.width=10, fig.height=8, fig.align='center'}
+
+p <- davis_ppt %>% 
+  ggplot(aes(x = date, 
+             y = ppt..mm., 
+             color = Name)) +
+  geom_line(alpha = 0.8) +
+  #scale_color_manual(values = site_colors) +
+  labs(y = "PPT", color = "Name") +
+  facet_grid(Name~.) +
+  theme_minimal()
+
+# Convert to Plotly
+ggplotly(p)
+
+```
+
+
+#### Compare PRISM and SNOTEL
+
+
+```{r, echo=FALSE, fig.width=10, fig.height=8, fig.align='center'}
+
+target_snow_df <- target_snow_df %>%
+  mutate(
+    Name = case_when(
+    site == "mt_rose" ~ "browns",
+    site == "little_valley" ~ "winters",
+    site == "marlette" ~ "ophir",
+    TRUE~"no"
+  ))
+
+total_ppt <- davis_ppt%>%
+  left_join(target_snow_df, by=c("date", "Name"))
+
+```
+
+
+
+
+```{r, echo=FALSE, fig.width=10, fig.height=5, fig.align='center'}
+
+p <- total_ppt %>% 
+  ggplot(aes(x = ppt..mm., 
+             y = precipitation, 
+             color = Name)) +
+  geom_point(alpha = 0.8) +  
+  # Add linear regression line per site
+  geom_smooth(method = "lm", se = FALSE) +
+  # Add regression equation and R2
+  stat_poly_eq(
+    aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+    formula = (y) ~ x,
+    parse = TRUE,
+    size = 3, 
+    position = "identity",
+
+  ) +
+  scale_color_manual(values = site_colors) +
+  labs(y = "SNOTEL PPT(mm)",
+       x = "PRISM PPT(mm)", 
+       color = "Name") +
+  facet_grid(.~Name) +
+  theme_minimal()
+p
+
+```
+
+```{r, echo=FALSE, fig.width=10, fig.height=8, fig.align='center'}
+
+flow_dat <- rbind(flow_data_OP, flow_data_WI, flow_data_DA)
+
+total_dat <- flow_dat%>%
+  left_join(davis_ppt, by=c("date", "site"="Name"))
+
+```
+
+### Sketch of the run-off relationship
+
+
+```{r, echo=FALSE, fig.width=10, fig.height=6, fig.align='center'}
+
+p <- total_dat %>% 
+  dplyr::filter(ppt..mm.>0)%>%
+   dplyr::filter(dischargeCMS>0)%>%
+  ggplot(aes(x = ppt..mm., 
+             y = dischargeCMS, 
+             color = site)) +
+  geom_point(alpha = 0.8) +  
+  # Add linear regression line per site
+  geom_smooth(method = "lm", se = FALSE) +
+  # Add regression equation and R2
+  stat_poly_eq(
+    aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+    formula = (y) ~ x,
+    parse = TRUE,
+    size = 3, 
+    position = "identity",
+
+  ) +
+  scale_y_continuous(
+    trans = "log",
+    breaks = scales::log_breaks(base = 10),
+    labels = scales::label_number()
+  ) +
+  # scale_x_continuous(
+  #   trans = "log",
+  #   breaks = scales::log_breaks(base = 10),
+  #   labels = scales::label_number()
+  # ) +
+  scale_color_manual(values = site_colors) +
+  labs(y = "log transformed streamflow (csm)",
+       x = "PPT(mm)", 
+       color = "Site") +
+  facet_grid(.~site) +
+  theme_minimal()
+
+
+p
+
+```
+
+```{r, echo=FALSE, include =F}
+
+# ggsave(plot = p, filename = paste("./flow_snow_relationship.png",sep=""),width=9.25,height=4.5,dpi=300)
+
+
+```
+
+
+#### Flush metrics
+
+- Date of peak SWE, melt, and peak spring flow
+
+- Label for PPT as rain, snow, mixed deepening on weather it changed the the slope of snow_depth by (+0.05)
+
+- Look at flow 3 days before a PPT and 3 days after PPT PRISM to get a rank of influential storm (H, M, L)
+
+```{r, echo=FALSE, fig.width=10, fig.height=8, fig.align='center'}
+mt_rose_df <- target_snow_df %>%
+  filter(site=="mt_rose") %>%
+  dplyr::select( "site_id", 
+                 "date",
+                 "WaterYear", 
+                 "elev",
+                 "snow_water_equivalent",
+                 "precipitation_cumulative",
+                 "snow_depth",
+                 "temperature_max",
+                 "temperature_min",
+                 "temperature_mean",
+                 "precipitation")
+
+
+ppt_snow_df <- davis_ppt%>%
+  left_join(mt_rose_df, by=c("date"))
+
+
+flow_snow_df <- ppt_snow_df%>%
+  left_join(flow_dat, by=c("date", "Name" = "site"))
+
+```
+
+
+```{r, echo=FALSE, fig.width=10, fig.height=8, fig.align='center'}
+library(dplyr)
+library(lubridate)
+
+flow_snow_df1 <- flow_snow_df %>%
+  group_by(WaterYear, Name) %>%
+  arrange(Name, date, .by_group = TRUE) %>%
+  mutate(
+    # 1. Max snow_depth per water year
+    max_snow_depth = max(snow_depth, na.rm = TRUE),
+    max_snow_date = date[which.max(snow_depth)],
+    max_snow_doy = yday(max_snow_date),
+    is_max_snow_depth = if_else(snow_depth == max_snow_depth & !is.na(snow_depth), 1, 0),
+
+    # 2. Detect transition from >0.001 to <=0.001
+    snow_depth_lag = lag(snow_depth),
+    melt_event_flag = if_else(snow_depth_lag > 0.001 & snow_depth <= 0.001, 1, 0),
+
+    # Restrict melt events to Feb–Aug
+    melt_event_flag = if_else(melt_event_flag == 1 & month(date) %in% 2:8, 1, 0)
+  ) %>%
+  mutate(
+    # Find first melt event date (only if in Feb–Aug)
+    melt_date = if_else(melt_event_flag == 1, date, as.POSIXct(NA)),
+    melt_date = first(na.omit(melt_date)),   # first valid event in Feb–Aug
+    melt_doy = yday(melt_date),
+    melt_event = if_else(date == melt_date, 1, 0)
+  ) %>%
+  ungroup() %>%
+  select(-snow_depth_lag)
+
+
+```
+
+
+```{r, echo=FALSE, fig.width=10, fig.height=8, fig.align='center'}
+library(dplyr)
+library(lubridate)
+
+flow_snow_df2 <- flow_snow_df1 %>%
+  # remove browns site
+  filter(Name != "browns") %>%
+  filter(WaterYear > 2020) %>%
+  group_by(WaterYear, Name) %>%
+  arrange(Name, date, .by_group = TRUE) %>%
+  mutate(
+    # restrict flows to Feb–July for max flow calculations
+    dischargeCMS_feb_jul = if_else(month(date) %in% 2:7, dischargeCMS, NA_real_),
+
+    # 1. Max flow per water year (Feb–July only)
+    max_flow = max(dischargeCMS_feb_jul, na.rm = TRUE),
+    max_flow_date = date[which.max(dischargeCMS_feb_jul)],
+    max_flow_doy = yday(max_flow_date),
+
+    # 2. Detect local peak flow events
+    flow_lag = lag(dischargeCMS),
+    flow_lead = lead(dischargeCMS),
+    peak_flow_event_flag = if_else(dischargeCMS > flow_lag & dischargeCMS > flow_lead, 1, 0),
+
+    # Restrict peaks to Feb–July
+    peak_flow_event_flag = if_else(peak_flow_event_flag == 1 & month(date) %in% 2:7, 1, 0)
+  ) %>%
+  mutate(
+    # Find first peak flow event date (only if in Feb–July)
+    pflow_date = if_else(peak_flow_event_flag == 1, date, as.POSIXct(NA)),
+    pflow_date = first(na.omit(pflow_date)),
+    pflow_doy = yday(pflow_date),
+    pflow_event = if_else(date == pflow_date, 1, 0)
+  ) %>%
+  ungroup() %>%
+  select(-flow_lag, -flow_lead, -dischargeCMS_feb_jul)
+
+
+```
+
+
+
+```{r, echo=FALSE, fig.width=12, fig.height=4, fig.align='center'}
+# library(ggplot2)
+# library(patchwork)
+
+p1 <- flow_snow_df1 %>% 
+  filter(WaterYear > 2020) %>%
+  ggplot(aes(x = factor(WaterYear), y = max_snow_doy)) +
+  geom_point(alpha = 0.8, size = 4) +  
+  geom_line(aes(group = 1)) +   # connect across discrete WaterYears
+  theme_minimal() + 
+  ggtitle("Timing of peak snow depth at Mt. Rose") + 
+  ylab("DOY") + xlab("Water year")
+
+p2 <- flow_snow_df1 %>% 
+  filter(WaterYear > 2020) %>%
+  ggplot(aes(x = factor(WaterYear), y = melt_doy)) +
+  geom_point(alpha = 0.8, size = 4) +  
+  geom_line(aes(group = 1)) +   # connect across WaterYears
+  theme_minimal() +
+  ggtitle("Timing of final snowmelt at Mt. Rose") + 
+  ylab("DOY") + xlab("Water year")
+
+p3 <- flow_snow_df2 %>% 
+  filter(WaterYear > 2020) %>%
+  ggplot(aes(x = factor(WaterYear), y = max_flow_doy, colour = Name, group = Name)) +
+  geom_point(alpha = 0.8, size =4) +  
+  geom_line() +
+  ggtitle("Timing of peak spring flow") + 
+  ylab("DOY") +
+  theme_minimal() + xlab("Water year")
+
+# Put them side by side (1 row, 3 cols)
+library(ggpubr)
+
+pannel <- ggarrange(
+  p1,
+  p2,
+  p3, 
+  nrow=1
+)
+
+pannel
+
+```
+
+
+```{r, echo=FALSE, include =F}
+# ggsave(plot = pannel, filename = paste("./pecip_phen.png",sep=""),width=12.25,height=3.5,dpi=300)
+
+```
+
+
+Despite a "normal snowpack" looks like Davis had a much earlier peak flow in 2025, this effect is less clear at winters creek. 
+
+
+
+
+#### rough draft of getting at leading precip increasing flows
+
+```{r, echo=FALSE, fig.width=10, fig.height=8, fig.align='center'}
+library(dplyr)
+library(lubridate)
+
+flow_snow_df3 <- flow_snow_df2 %>%
+  # remove browns site
+  filter(Name != "browns") %>%
+  filter(WaterYear > 2020) %>%
+  group_by(WaterYear, Name) %>%
+  arrange(Name, date, .by_group = TRUE) %>%
+  mutate(
+    flow_lag = lag(dischargeCMS),
+    lead_ppt = lead(ppt..mm.),
+    flow_change = (dischargeCMS-flow_lag) / flow_lag,
+    ppt_flow_increase_flag = if_else(!is.na(flow_change) & lead_ppt > 0 & flow_change > 0, 1, 0)) %>%
+  ungroup() %>%
+  select(-flow_lag)
+
+```
+
+```{r, echo=FALSE, fig.width=15, fig.height=4, fig.align='center'}
+library(ggplot2)
+
+hist(flow_snow_df3$flow_change)
+
+ggplot(flow_snow_df3, aes(x = ppt..mm., fill = factor(peak_flow_event_flag))) +
+  geom_histogram(binwidth = 10, position = "identity", alpha = 0.6, color = "black") +
+  facet_wrap(~ Name, scales = "free_y") +
+  scale_fill_manual(values = c("0" = "gray70", "1" = "steelblue"),
+                    name = "Peak flow event") +
+  theme_minimal() +
+  labs(
+    title = "Precipitation distributions by site",
+    x = "Precipitation (mm)",
+    y = "Count"
+  )
+
+
+```
+
+
+
+- Label for PPT as rain, snow, mixed deepening on weather it changed the the slope of snow_depth by (+0.05)
+
+- Look at flow 3 days before a PPT and 3 days after PPT PRISM to get a rank of influential storm (H, M, L)
+
+```{r, echo=FALSE, include=FALSE}
+# saveRDS(flow_snow_df2, "./Davis_fire_flow_PPT.rds")
+
+```
+

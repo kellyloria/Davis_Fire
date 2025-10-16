@@ -1,0 +1,1114 @@
+---
+title: 'Streamflow for Davis fire streams'
+author: "Kelly Loria"
+date: "`r Sys.Date()`"
+output:
+   html_document:
+    theme: united
+    highlight: tango
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{=html}
+<style type="text/css">
+body, td {font-size: 12px;}
+code.r{font-size: 8px;}
+pre {font-size: 10px}
+</style>
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = F, message = F)
+#knitr::opts_knit$set(root.dir = 'C/Users/kloria/Documents/Davis_data_exploration/')
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\n \\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+
+```
+
+```{r, include=FALSE}
+library(snotelr)
+library(tidyverse)
+library(lubridate)
+library(readr)
+library(ggpubr)
+library(ggplot2)
+#library(ggdist)
+library(dataRetrieval)
+library(ggpubr)
+library(lme4)
+#library(lmerTest)
+#library(MuMIn)
+```
+
+## Calculating hydrology characteristics for stream flow data
+
+### 1. Flow Duration Analysis
+
+Bring in stream flow to look at snow to flow dynamics from USGS stream gage network ([streamstats](https://streamstats.usgs.gov/ss/))
+
+```{r eval=TRUE, echo = TRUE, error=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+# identify and scrape data from USGS gages for target sites (BW and GB)
+
+# Define the site numbers for "GB" and "BW"
+siteNo_ophir <- "10348520"
+siteNo_BW <- "10336660"
+
+# Define the parameter codes for flow and stage
+pCode_flow <- "00060"
+pCode_stage <- "00065"
+
+# Set the start date to "1980-01-01" and end date to today (current date)
+start.date <- "2005-09-30"
+end.date <- Sys.Date()  # Use the current date as the end date
+
+# Ensure that dplyr functions are correctly used
+flow_data_ophir <- readNWISdata(siteNumbers = siteNo_ophir, parameterCd = pCode_flow, startDate = start.date, endDate = end.date) %>%
+  mutate(Site = "ophir", label = "unburned") 
+# %>%
+#   dplyr::rename(date = dateTime, dischargeCFS = X_00060_00003) %>%
+#   mutate(
+#     dischargeCMS = dischargeCFS * 0.0283168,
+#     scale_Q = ((dischargeCFS * 0.0283168) / 10.64485)) %>%
+#     select(date, dischargeCFS, Site, label, dischargeCMS, scale_Q)
+
+# View the processed data
+print(head(flow_data_ophir))
+
+flow_data_BW <- readNWISdata(siteNumbers = siteNo_BW, parameterCd = pCode_flow, startDate = start.date, endDate = end.date) %>%
+  mutate(Site = "BW", label = "west") %>%
+  rename(date = dateTime, dischargeCFS = X_00060_00003) %>%
+  mutate(
+    dischargeCMS = dischargeCFS * 0.0283168,
+    scale_Q = ((dischargeCFS * 0.0283168) / 29.00787)
+  ) %>%
+  select(date, dischargeCFS, Site, label, dischargeCMS, scale_Q)
+
+
+# Combine data for both sites
+flow_data <- rbind(flow_data_GB, flow_data_BW)
+
+
+```
+
+### A. Flow Duration Analysis: Estimating flow exceedance probabilities
+
+
+
+```{r, echo=FALSE, fig.width=6, fig.height=4, fig.align='center'}
+# start with Blackwood
+result_BW <- flow_data_BW %>%
+  group_by(Site) %>%
+  dplyr::summarize(
+    total_intervals = n(),
+    ranked_scale_discharge = list(sort(scale_Q, decreasing = TRUE)),
+    ranked_discharge = list(sort(dischargeCMS, decreasing = TRUE))
+  ) %>%
+  mutate(
+    exceedence_prob = purrr::map(ranked_discharge, ~ seq(1, length(.), length.out = length(.)) / length(.) * 100)
+  ) %>%
+  unnest(cols = c(ranked_scale_discharge, ranked_discharge, exceedence_prob))
+
+# Plotting for each site
+result_BW %>%
+  ggplot(aes(y = ranked_scale_discharge, x = exceedence_prob, color = Site)) +
+  geom_line() + theme_bw() +
+  scale_color_manual(values=alpha(c("#3283a8"),0.5)) +
+  labs(y = "Discharge (cms/km)", x = "Exceedence Probability", title = "Exceedence Probability vs. Discharge by Site") + facet_grid(.~Site)
+
+max_discharge <- max(flow_data_BW$scale_Q, na.rm = TRUE)
+num_classes <- 20
+bin_width <- max_discharge / num_classes
+flow_data_BW$discharge_bin <- cut(flow_data_BW$scale_Q, breaks = seq(0, max_discharge, by = bin_width), include.lowest = TRUE, labels = FALSE)
+
+plot2 <- ggplot(data=flow_data_BW, aes(y = scale_Q, x = discharge_bin, color = Site)) + geom_line() + theme_bw() 
+
+# Now Glenbrook
+result_GB <- flow_data_GB %>%
+    group_by(Site) %>%
+  dplyr::summarize(
+    total_intervals = n(),
+    ranked_scale_discharge = list(sort(scale_Q, decreasing = TRUE)),
+    ranked_discharge = list(sort(dischargeCMS, decreasing = TRUE))
+  ) %>%
+  mutate(
+    exceedence_prob = purrr::map(ranked_discharge, ~ seq(1, length(.), length.out = length(.)) / length(.) * 100)
+  ) %>%
+  unnest(cols = c(ranked_scale_discharge, ranked_discharge, exceedence_prob))
+
+
+max_discharge <- max(flow_data_GB$scale_Q, na.rm = TRUE)
+num_classes <- 20
+bin_width <- max_discharge / num_classes
+flow_data_GB$discharge_bin <- cut(flow_data_GB$scale_Q, breaks = seq(0, max_discharge, by = bin_width), include.lowest = TRUE, labels = FALSE)
+
+# Plotting for each site
+result_GB %>%
+  ggplot(aes(y = ranked_scale_discharge, x = exceedence_prob, color = Site)) +
+  geom_line() + theme_bw() +
+  scale_color_manual(values=alpha(c("#a67d17"),0.5)) +
+  labs(y = "Discharge (cms/km)", x = "Exceedence Probability", title = "Exceedence Probability vs. Discharge by Site") + facet_grid(.~Site)
+
+plot3 <- ggplot(data=flow_data_GB, aes(y = dischargeCFS, x = discharge_bin, color = Site))+ scale_color_manual(values=alpha(c("#a67d17"),0.5)) +
+  geom_line() + theme_bw() 
+```
+
+
+
+#### Recap:
+
+Blackwood appears to be flashier relative to glenbrook based on daily streamflow from 2020-2023.
+
+### B. Baseflow separation based on EcoHydRology baseflow function:
+
+<http://cran.nexr.com/web/packages/EcoHydRology/EcoHydRology.pdf>
+
+```{r, BaseflowSeparation fxn, include=FALSE}
+BaseflowSeparation <-
+function(streamflow, filter_parameter=0.925, passes=3){
+suppressWarnings(Ends<-c(1,length(streamflow))*rep(1,(passes+1))) # Start and end values for the filter function
+suppressWarnings(AddToStart<-c(1,-1)*rep(1,passes))
+btP<-streamflow##Previous pass's baseflow approximation
+qft<-vector(length=length(streamflow))
+bt<-vector(length=length(streamflow))
+bt[1]<-if(streamflow[1]<quantile(streamflow,0.25)) streamflow[1] else mean(streamflow)/1.5
+##Guess baseflow value in first time step.  
+for(j in 1:passes){
+for (i in (Ends[j]+AddToStart[j]):Ends[j+1]){
+if ((filter_parameter*bt[i-AddToStart[j]]+((1-filter_parameter)/2)*(btP[i]+btP[i-AddToStart[j]]))>btP[i]){
+bt[i]<-btP[i]
+} else bt[i]<-filter_parameter*bt[i-AddToStart[j]]+((1-filter_parameter)/2)*(btP[i]+btP[i-AddToStart[j]])
+qft[i]<-streamflow[i]-bt[i]
+}
+if (j<passes){
+btP<-bt
+bt[Ends[j+1]]<-if(streamflow[Ends[j+1]]<mean(btP))streamflow[Ends[j+1]]/1.2 else mean(btP)
+##Refines the approximation of end values after the first pass
+}
+}
+f <- data.frame(bt,qft)
+return(f)
+}
+```
+
+#### Estimate baseflow:
+
+```{r, echo=TRUE}
+# Blackwood #
+flow_data_BW <- na.omit(flow_data_BW)
+
+bfs<-BaseflowSeparation(flow_data_BW$scale_Q, passes=3)
+bfs[,1] <- as.numeric(bfs[,1])
+
+flow_data_BW <- cbind(flow_data_BW, bfs)
+
+# Glenbrook #
+bfs_GB<-BaseflowSeparation(flow_data_GB$scale_Q , passes=3)
+bfs_GB[,1] <- as.numeric(bfs_GB[,1])
+
+flow_data_GB <- cbind(flow_data_GB, bfs_GB)
+```
+
+### Visualize hydrograph and baseflow components:
+
+##### Plots for Blackwood flow
+
+```{r, echo=FALSE, fig.width=6, fig.height=4, fig.align='center'}
+# Plotting for each site
+bt_plot_BW <- ggplot(data = flow_data_BW) + 
+  geom_line(aes(y = scale_Q, x = date, color = "Streamflow")) +
+  geom_line(aes(y = bt, x = date, color = "Baseflow")) +
+  geom_line(aes(y = qft, x = date, color = "Quickflow")) +
+  scale_y_continuous(labels = scales::number_format(unit = "m³/s/(km)")) +
+  labs(color = "Components", x = "Date", y = "Flow (m³/s)/(km)") +
+  scale_color_manual(values = c("Streamflow" = "black", "Baseflow" = "#B51963", "Quickflow" = "#0073E6")) +
+  ggtitle("Blackwood Creek") +
+  scale_x_datetime(date_breaks = "4 months", date_labels = "%b-%y") +
+  theme_bw() +
+  theme(legend.position = NULL)
+
+# Remove legend
+bt_plot_BW <- bt_plot_BW + guides(color = FALSE)
+
+
+# get correlations between stream flow and bt as well as qft
+BW_flow_bt <- lm(scale_Q~bt, data=flow_data_BW)
+summary(BW_flow_bt)
+BW_flow_qft <- lm(scale_Q~qft, data=flow_data_BW)
+summary(BW_flow_qft)
+
+flow_plot_BW <- ggplot(data=flow_data_BW) + 
+   geom_point(data = flow_data_BW, aes(y = scale_Q, x = bt, color = "Baseflow, R² = 0.77"), alpha = 0.5) +
+  geom_point(data = flow_data_BW, aes(y = scale_Q, x = qft, color = "Quickflow, R² = 0.89"), alpha = 0.5) +
+  stat_smooth(data = flow_data_BW, aes(y = scale_Q, x = bt, color = "Baseflow, R² = 0.77"), method = "lm", se = FALSE) +
+  stat_smooth(data = flow_data_BW, aes(y = scale_Q, x = qft, color = "Quickflow, R² = 0.89"), method = "lm", se = FALSE) +
+  labs(color = "Component", y = "Streamflow (m³/s)/(km)") +
+  scale_color_manual(values = c("Baseflow, R² = 0.77" = "#B51963", "Quickflow, R² = 0.89" = "#0073E6"))  + ggtitle("Blackwood Creek") + xlab("Component flow (m³/s)/(km)") + theme_bw()+
+  theme(legend.position = "bottom") 
+flow_plot_BW
+
+library(ggpubr)
+baseflow_plt <- ggarrange(bt_plot_BW, 
+                     flow_plot_BW,
+                     ncol = 2, nrow = 1,
+                     common.legend = T, 
+                     legend = "bottom",
+                     widths = c(.75, 0.35))
+###
+# ggsave(plot = baseflow_plt, filename = paste("./BW_flow_separation_plot.png",sep=""),width=10,height=4,dpi=300)
+
+
+```
+
+
+
+##### Function for water year:
+
+```{r eval=TRUE, echo = T, error=FALSE, warning=FALSE, message=FALSE}
+# fxn for water year
+water_year <- function(data) {
+  data %>%
+    mutate(date = ymd(date)) %>%
+    mutate(WaterYear = if_else(month(date) >= 10, year(date) + 1, year(date)))
+}
+```
+
+```{r, echo=FALSE, fig.width=6, fig.height=4, fig.align='center'}
+bt_plot_GB <- ggplot(data=flow_data_GB) + 
+  geom_line(aes(y = scale_Q, x = date, color = "Streamflow")) +
+  geom_line(aes(y = bt, x = date, color = "Baseflow")) +
+  geom_line(aes(y = qft, x = date, color = "Quickflow")) +
+  scale_y_continuous(labels = scales::number_format(unit = "m³/s/(km)")) +
+  labs(color = "Components", x = "Date", y = "Flow (m³/s³)/(km)") +
+  scale_color_manual(values = c("Streamflow" = "black", "Baseflow" = "#B51963", "Quickflow" = "#0073E6")) +
+  ggtitle("Glenbrook Creek") +
+  scale_x_datetime(date_breaks = "4 months", date_labels = "%b-%y") +
+  theme_bw() +
+  theme(legend.position = NULL)
+
+# Remove legend
+bt_plot_GB <- bt_plot_GB + guides(color = FALSE)
+
+# get correlations between stream flow and bt as well as qft
+GB_flow_bt <- lm(scale_Q~bt, data=flow_data_GB)
+summary(GB_flow_bt)
+GB_flow_qft <- lm(scale_Q~qft, data=flow_data_GB)
+summary(GB_flow_qft)
+
+flow_plot_GB <- ggplot(data=flow_data_GB) + 
+   geom_point(data = flow_data_GB, aes(y = scale_Q, x = bt, color = "Baseflow, R² = 0.89"), alpha = 0.5) +
+  geom_point(data = flow_data_GB, aes(y = scale_Q, x = qft, color = "Quickflow, R² = 0.95"), alpha = 0.5) +
+  stat_smooth(data = flow_data_GB, aes(y = scale_Q, x = bt, color = "Baseflow, R² = 0.89"), method = "lm", se = FALSE) +
+  stat_smooth(data = flow_data_GB, aes(y = scale_Q, x = qft, color = "Quickflow, R² = 0.95"), method = "lm", se = FALSE) +
+  labs(color = "Component", y = "Streamflow (m³/s)/(km)") +
+  scale_color_manual(values = c("Baseflow, R² = 0.89" = "#B51963", "Quickflow, R² = 0.95" = "#0073E6"))  + ggtitle("Glenbrook Creek") + xlab("Component flow (m³/s)/(km)") + theme_bw()+
+  theme(legend.position = "bottom") 
+flow_plot_GB
+
+
+
+
+#library(ggpubr)
+baseflow_plt <- ggarrange(bt_plot_GB, 
+                     flow_plot_GB,
+                     ncol = 2, nrow = 1,
+                     common.legend = T, 
+                     legend = "bottom",
+                     widths = c(.75, 0.35))
+###
+# ggsave(plot = baseflow_plt, filename = paste("./GB_flow_separation_plot.png",sep=""),width=10,height=4,dpi=300)
+
+library(ggplot2)
+library(dplyr)
+
+# Assuming flow_data_GB has columns `date` and `scale_Q`
+
+bt_plot_GB <- ggplot(data = flow_data_GB)+ 
+  geom_line(aes(y = scale_Q, x = date)) +
+  scale_x_date(expand = c(0, 0), 
+               breaks = seq(as.Date("2015-01-01"), as.Date("2023-10-01"), by = "4 months"),
+               date_labels = "%b-%y") +
+  labs(y = 'Delta SWE (mm)', x = NULL) +
+  theme_bw() +
+  theme(axis.text = element_text(size = 18),
+        axis.title = element_text(size = 20),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 16))
+
+# Print the plot
+print(bt_plot_GB)
+
+
+
+```
+
+### C. Subset of Seven fundamental streamflow statistics (FDSS) 
+
+Recommended by Archfield et al. (2014) and Blaszczak et al. - 2018 - Scoured or suffocated
+
+##### Read in data as hourly.
+
+```{r, echo = FALSE, error=FALSE, warning=FALSE, message=FALSE}
+# Download hourly flow data for both sites separately and combine
+HRflow_data_GB <- readNWISuv(siteNumbers = siteNo_GB, parameterCd = pCode_flow, startDate = start.date, endDate = end.date) %>%
+  mutate(Site = "GB", label = "east") %>% 
+  select(date = "dateTime", dischargeCFS = "X_00060_00000", Site, label) %>%
+    mutate(
+    dischargeCMS= c(dischargeCFS*0.0283168),
+    scale_Q= c((dischargeCFS*0.0283168)/11.2)) 
+
+
+HRflow_data_BW <- readNWISuv(siteNumbers = siteNo_BW, parameterCd = pCode_flow, startDate = start.date, endDate = end.date) %>%
+  mutate(Site = "BW", label = "west") %>%
+  select(date = "dateTime", dischargeCFS = "X_00060_00000", Site, label) %>%
+    mutate(
+    dischargeCMS= c(dischargeCFS*0.0283168),
+    scale_Q= c((dischargeCFS*0.0283168)/11.2)) 
+
+# Combine data for both sites
+HRflow_data <- rbind(HRflow_data_GB, HRflow_data_BW)
+```
+
+
+
+### D. Calculate Richards-Baker index (RBI) and the number of peaks above the 75th quantile of flow (PeaksQ75) based on the provided equations:
+
+$$RBI =  (\sum_{i=1}^{n} |Q_{i}-Q_{i-1}|/ \sum_{i=1}^{n} Q_{i} ) / (Catchment Area) $$
+
+##### Read in data from SNOTEL
+
+```{r eval=TRUE, echo = TRUE, error=FALSE, warning=FALSE, message=FALSE}
+# read in the sites data for all SNOTEL sites
+target_snow_data <- snotelr::snotel_download(site_id = c(848, 615), internal = TRUE)
+target_snow_data$date<- as.Date(target_snow_data$date)
+
+# transform for water year:
+target_snow_data<- water_year(target_snow_data)
+
+#Trim for columns 
+target_snow_data <- target_snow_data %>%
+  filter(WaterYear>2019) %>%
+  mutate(Site = case_when(
+    site_id == 615 ~ "GB",
+    site_id %in% c(848) ~ "BW")) %>%
+  select(site_name,site_id,date,snow_water_equivalent,precipitation_cumulative,
+         temperature_max,temperature_min,temperature_mean,precipitation,WaterYear,
+         Site)
+```
+
+## A. Calculate delta SWE
+
+```{r eval=TRUE, echo = TRUE, error=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+result <- target_snow_data %>%
+  filter(date > as.Date("2020-09-29"))%>%
+  arrange(Site, date) %>%
+  group_by(Site) %>%
+  mutate(
+    daily_delta_SWE = snow_water_equivalent - lag(snow_water_equivalent, default = 0),
+    snow_water_equivalent_cumulative = cumsum(daily_delta_SWE),
+    precipitation_quality = ifelse(daily_delta_SWE > 0, "Accumulate", "Melt"), # not really rain
+    rain = ifelse(daily_delta_SWE < 0, 1, 0)  # again just a really simple proxy
+  ) %>%
+  ungroup()
+```
+
+## plot delta SWE
+
+```{r eval=TRUE, echo = TRUE, error=FALSE, warning=FALSE, message=FALSE}
+delta_swe_plot <- 
+  ggplot(result%>%filter(date>as.Date("2020-09-30") & date<as.Date("2023-10-01")), aes(x=as.Date(date), y=daily_delta_SWE, colour = as.factor(Site))) + 
+  geom_line(size=0.75) + 
+    scale_x_date(expand = c(0, 0), 
+               limits = c(as.Date("2020-09-30"), as.Date("2023-10-01")),  
+               breaks = seq(as.Date("2015-01-01"), as.Date("2023-10-01"), "3 months"),
+               date_labels = "%b-%y") + 
+  labs(y = expression(Delta ~ "SWE (mm)"), x = NULL) +
+  scale_color_manual(values=alpha(c("#3283a8", "#a67d17"),0.9)) +
+  theme_bw() + 
+    scale_y_continuous(
+    sec.axis = sec_axis(~ ., name = "Label") # Set right y-axis label
+  ) + 
+  theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10),
+        axis.title.x = element_text(size = 12),axis.title.y = element_text(size = 12),
+        plot.subtitle = element_text(size = 12))
+  facet_grid(Site~.)
+delta_swe_plot
+
+swe_plot <- 
+  ggplot(result%>%filter(date>as.Date("2020-09-30") & date<as.Date("2023-10-01")), aes(x=as.Date(date), y=snow_water_equivalent, colour = as.factor(Site))) + 
+  geom_line(size=0.75) + 
+    scale_x_date(expand = c(0, 0), 
+               limits = c(as.Date("2020-09-30"), as.Date("2023-10-01")),  
+               breaks = seq(as.Date("2015-01-01"), as.Date("2023-10-01"), "3 months"),
+               date_labels = "%b-%y") + 
+  labs(y = 'SWE (mm)', x=NULL) +
+  scale_color_manual(values=alpha(c("#3283a8", "#a67d17"),0.9)) +
+  theme_bw() + 
+    scale_y_continuous(
+    sec.axis = sec_axis(~ ., name = "Label") # Set right y-axis label
+  ) + 
+  theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10),
+        axis.title.x = element_text(size = 12),axis.title.y = element_text(size = 12),
+        plot.subtitle = element_text(size = 12))
+swe_plot
+
+lakelevel.ts$date <- as.Date(lakelevel.ts$date)
+
+flow_data_p<- flow_data%>%
+  full_join(lakelevel.ts)
+
+filtered_data <- flow_data_p %>%
+  filter(date > as.Date("2020-09-30") & date < as.Date("2023-10-01"))
+
+
+
+flow_plot <- 
+  ggplot(flow_data_p %>%
+           filter(date > as.Date("2020-09-30") & date < as.Date("2023-10-01")),
+         aes(x = as.Date(date), colour = as.factor(Site))) + 
+  geom_line(aes(y = scale_Q), linetype = "solid", size = 0.75) +
+  scale_x_date(expand = c(0, 0), 
+               limits = c(as.Date("2020-09-30"), as.Date("2023-10-01")),  
+               breaks = seq(as.Date("2015-01-01"), as.Date("2023-10-01"), "3 months"),
+               date_labels = "%b-%y") + 
+  labs(y = expression("streamflow (m"^3 * "s"^-1 * "km"^-1*")"), x = NULL) +
+  scale_color_manual(values = alpha(c("#3283a8", "#a67d17"), 0.75)) +
+    scale_y_continuous(
+    sec.axis = sec_axis(~ ., name = "Label") # Set right y-axis label
+  ) + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(size = 10), 
+        axis.text.y = element_text(size = 10),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12),
+        plot.subtitle = element_text(size = 12),
+        legend.position = "bottom") 
+
+
+
+# Print the plot
+print(flow_plot)
+# 
+dat_rejoin <- readRDS("/Users/kellyloria/Documents/LittoralMetabModeling/RawData/RBR\ profiles/24NS_depth_dat.rds")
+
+
+lakelevel.ts$date <- as.Date(lakelevel.ts$date)
+
+flow_data_p<- flow_data%>%
+  full_join(lakelevel.ts)
+
+filtered_data <- flow_data_p %>%
+  filter(date > as.Date("2020-09-30") & date < as.Date("2023-10-01"))
+
+
+### Merge data frames 
+depth_data_p1 <- dat_rejoin%>%
+  left_join(flow_data_p,  by = c("date"))
+
+
+dat_rejoin_fill <-  dat_rejoin%>%
+  group_by(Site)%>%
+  fill(sensor_depth,.direction = "down")%>%
+  fill(lake_levelm,.direction = "down")
+
+dat_rejoin_fill <-  dat_rejoin_fill%>%
+  group_by(Site)%>%
+  fill(sensor_depth,.direction = "up")%>%
+  fill(lake_levelm,.direction = "up")
+
+## summarize depth by shore:
+depth_data_p1 <- dat_rejoin%>%
+  dplyr::group_by(shore, date)%>%
+  summarise(
+    sensor_depth = mean(sensor_depth, na.rm = TRUE),
+    lake_levelm = mean(lake_levelm, na.rm = T))
+
+summary(depth_data_p1)
+
+```
+
+```{r}
+names(dat_rejoin)
+library(ggplot2)
+library(scales)
+
+# Example plot for `dat_rejoin` dataframe
+depth_plt <- ggplot(depth_data_p1, aes(x = date)) +
+  # Left y-axis: lake_levelm (low to high)
+  geom_line(aes(y = lake_levelm), color = "grey40", lty="dashed", size=1) +
+  scale_y_continuous(
+    name = "Lake level (m)",  # Left axis label
+    sec.axis = sec_axis(
+      trans = ~ max(depth_data_p1$sensor_depth) - . + min(depth_data_p1$sensor_depth),
+      name = "Sensor depth (m)",
+            labels = label_number(accuracy = 0.1)),
+      labels = label_number(accuracy = 0.01)
+  ) +
+  # Right y-axis: sensor_depth (high to low, inverted)
+  geom_line(aes(y = max(sensor_depth) - sensor_depth + min(sensor_depth), color = shore), size=0.75) +
+  labs(
+    x = "Date (month-year)",  # X-axis label
+  ) +
+    scale_colour_manual(values = c(SS = "#136F63", BW = "#3283a8", GB = "#a67d17", SH = "#c76640")) + 
+      scale_x_date(expand = c(0, 0), 
+               limits = c(as.Date("2020-09-30"), as.Date("2023-10-01")),  
+               breaks = seq(as.Date("2015-01-01"), as.Date("2023-10-01"), "3 months"),
+               date_labels = "%b-%y") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 10), 
+        axis.text.y.left = element_text(size = 10),
+        axis.text.y.right = element_text(size = 10),
+        axis.title.x = element_text(size = 12),
+        axis.title.y.left = element_text(color = "grey40", size = 12),
+        axis.title.y.right = element_text(color = "black", size = 12),
+        plot.subtitle = element_text(size = 12),
+        legend.position = "bottom")
+
+depth_plt
+
+```
+
+```{r}
+result_yr <- result %>%
+  group_by(Site, WaterYear) %>%
+  summarise(snow_water_equivalentc = sum(snow_water_equivalent, na.rm = T),
+             precipitationc = sum(precipitation, na.rm = T),
+             rainc = sum(rain, na.rm = T),
+            temperature_mean = mean(temperature_mean, na.rm = T)
+            )%>%
+  filter(WaterYear>2019 & WaterYear<2025)
+
+f_data<-water_year(flow_data)
+seconds_in_day <-  c(24 * 60 * 60)
+
+result2_yr <- f_data %>%
+  group_by(Site, WaterYear) %>%
+  summarise(SumQ = sum(scale_Q *seconds_in_day, na.rm = T))%>%
+  filter(WaterYear>2020 & WaterYear<2024)
+
+```
+Functions to identify max SWE per site for each water year and last day of snow pack persisitence. 
+```{r include=FALSE}
+summarize_peak_SWE_date <- function(data) {
+  data %>%
+    filter(lubridate::month(date) >= 1 & lubridate::month(date) <= 6) %>%
+    arrange(Site, date) %>%
+    group_by(Site, WaterYear = lubridate::year(date) + if_else(lubridate::month(date) < 10, 0, 1)) %>%
+    summarize(
+      peak_SWE_date = date[which.max(snow_water_equivalent)],
+      peak_SWE_day_of_year = lubridate::yday(date[which.max(snow_water_equivalent)]),
+      max_SWE = max(snow_water_equivalent)
+    ) %>%
+    ungroup()
+}
+
+summarize_transition_to_zero <- function(data) {
+  data %>%
+    filter(lubridate::month(date) >= 4 & lubridate::month(date) <= 7) %>%
+    arrange(Site, date) %>%
+    group_by(Site, WaterYear = lubridate::year(date) + if_else(lubridate::month(date) < 10, 0, 1)) %>%
+    summarize(
+      transition_to_zero = date[which.max(
+        (daily_delta_SWE == 0 & lead(daily_delta_SWE == 0, default = FALSE) & 
+         lead(daily_delta_SWE == 0, n = 8, default = FALSE) & 
+         lag(daily_delta_SWE, default = 0) == 0) & 
+         (lead(daily_delta_SWE == 0, n = 8) & lag(daily_delta_SWE == 0, n = 5))
+      )],
+      .groups = 'drop',
+      trans_day_of_year = lubridate::yday(transition_to_zero),
+    ) %>%
+    filter(!is.na(transition_to_zero))
+}
+
+
+
+summarize_peak_SPflow_date <- function(data) {
+  data %>%
+    filter(lubridate::month(date) >= 2 & lubridate::month(date) <= 8) %>%
+    dplyr::group_by(Site, WaterYear = lubridate::year(date) + if_else(lubridate::month(date) < 10, 0, 1)) %>%
+    dplyr::summarize(
+      peak_SPFlow_date = date[which.max(scale_Q)],  # Date of the highest scale_Q
+      peak_flow_day_of_year = lubridate::yday(date[which.max(scale_Q)]),  # DOY of the highest scale_Q
+      max_SPFlow = max(scale_Q)  # Maximum scale_Q for the given year
+    ) %>%
+    ungroup()
+}
+```
+Date of peak SWE per site for each water year: 
+```{r, error=FALSE, warning=FALSE}
+peakSWE_sum <- summarize_peak_SWE_date(result)
+peakSWE_sum
+```
+This function identifies the date when 2 consecutive days of negative daily_delta_SWE values transition to a value of 0 from April to July each year, which is then followed by at least 5 more days of 0 values for daily_delta_SWE for each Site. Hopefully indicating the last day of spring melt per site each year.
+```{r, error=FALSE, warning=FALSE}
+melt_summary <- summarize_transition_to_zero(result)
+melt_summary
+```
+Date of peak spring stream flow per site for each water year: 
+```{r, error=FALSE, warning=FALSE}
+peakflow_sum <- summarize_peak_SPflow_date(flow_data)
+peakflow_sum
+```
+Ignore the 2024 obs.
+
+```{r eval=TRUE, include=FALSE, echo = TRUE, error=FALSE, warning=FALSE, message=FALSE}
+peakmelt_BW <- as.Date(c("2021-05-13", "2022-05-24", "2023-06-20", "2024-06-01"))
+peakmelt_BW_data <- result[result$Site == "BW" & result$date %in% peakmelt_BW, ]
+
+peakmelt_GB <- as.Date(c("2021-05-12", "2022-05-23", "2023-06-15", "2024-05-28"))
+peakmelt_GB_data <- result[result$Site == "GB" & result$date %in% peakmelt_GB, ]
+
+
+B_delta_swe_plot <- 
+  ggplot(result, aes(x=as.Date(date), y=daily_delta_SWE, colour = as.factor(Site))) + 
+  geom_line() +
+    geom_point(data = peakmelt_BW_data, aes(x = as.Date(date), y = daily_delta_SWE), 
+             size = 1, colour = "#0e455e", pch = 1) +
+    geom_point(data = peakmelt_GB_data, aes(x = as.Date(date), y = daily_delta_SWE), 
+             size = 1, colour = "#694b02", pch = 1) +
+  scale_x_date(expand = c(0, 0), breaks = seq(as.Date("2015-01-01"), 
+                                              as.Date("2024-10-01"), "4 months"),
+               date_labels = "%b-%y") + labs(y = 'Delta SWE (mm)', x=NULL) +
+  scale_color_manual(values=alpha(c("#3283a8", "#a67d17"),0.9)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10),
+        axis.title.x = element_text(size = 12),axis.title.y = element_text(size = 12),
+        plot.subtitle = element_text(size = 12))
+  facet_grid(Site~.)
+
+
+
+peakSWE_BW <- as.Date(c("2021-03-23", "2022-03-14", "2023-04-08", "2024-04-01"))
+peakSWE_BW_data <- result[result$Site == "BW" & result$date %in% peakSWE_BW, ]
+
+peakSWE_GB <- as.Date(c("2021-03-23", "2022-03-18", "2023-04-06", "2024-04-08"))
+peakSWE_GB_data <- result[result$Site == "GB" & result$date %in% peakSWE_GB, ]
+
+A_swe_plot <- 
+  ggplot(result, aes(x=as.Date(date), y=snow_water_equivalent, colour = as.factor(Site))) + 
+  geom_line() + 
+  geom_point(data = peakSWE_BW_data, aes(x = as.Date(date), y = snow_water_equivalent), 
+             size = 1, colour = "#0e455e", pch = 1) +
+    geom_point(data = peakSWE_GB_data, aes(x = as.Date(date), y = snow_water_equivalent), 
+             size = 1, colour = "#694b02", pch = 1) +
+  scale_x_date(expand = c(0, 0), breaks = seq(as.Date("2015-01-01"), 
+                                              as.Date("2024-10-01"), "4 months"),
+               date_labels = "%b-%y") + labs(y = 'SWE (mm)', x=NULL) +
+  scale_color_manual(values=alpha(c("#3283a8", "#a67d17"),0.9)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10),
+        axis.title.x = element_text(size = 12),axis.title.y = element_text(size = 12),
+        plot.subtitle = element_text(size = 12))
+
+
+peakflow_BW <- as.Date(c("2021-05-06", "2022-05-19", "2023-05-21", "2024-05-18"))
+peakflow_BW_data <- flow_data[flow_data$Site == "BW" & flow_data$date %in% peakflow_BW, ]
+
+peakflow_GB <- as.Date(c("2021-04-20", "2022-03-27", "2023-05-23", "2024-04-12"))
+peakflow_GB_data <- flow_data[flow_data$Site == "GB" & flow_data$date %in% peakflow_GB, ]
+
+
+C_flow_plot <- 
+  ggplot(flow_data, aes(x=as.Date(date), y=log(scale_Q+1), colour = as.factor(Site))) + 
+  geom_line() + 
+    geom_point(data = peakflow_BW_data, aes(x = as.Date(date), y = log(scale_Q+1)), 
+             size = 1, colour = "#0e455e", pch = 1) +
+    geom_point(data = peakflow_GB_data, aes(x = as.Date(date), y = log(scale_Q+1)), 
+             size = 1, colour = "#694b02", pch = 1) +
+    scale_x_date(expand = c(0, 0), breaks = seq(as.Date("2015-01-01"), 
+                                              as.Date("2024-10-01"), "4 months"),
+               date_labels = "%b-%y") + labs(y = 'log(Flow+1) (m³/s)/(km)', x='Date (month-year)') +
+  scale_color_manual(values=alpha(c("#3283a8", "#a67d17"),0.9)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10),
+        axis.title.x = element_text(size = 12),axis.title.y = element_text(size = 12),
+        plot.subtitle = element_text(size = 12))+
+  theme(legend.position = "bottom") 
+
+
+D_peakSWE_sum_plot <- ggplot(peakSWE_sum, aes(x = WaterYear, y = peak_SWE_day_of_year, fill = Site)) +
+  geom_bar(stat = "identity", position = "dodge", aes(color=Site)) +
+  coord_cartesian(ylim = c(40, 120)) +
+    geom_text(aes(label = peak_SWE_day_of_year), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5, size = 3, fontface = "bold") + 
+  labs( x = NULL, y = "DOY of peak SWE",
+    fill = "Site") + 
+  scale_fill_manual(values = alpha(c("#3283a8", "#a67d17"), 0.5)) + 
+  scale_color_manual(values = alpha(c("#3283a8", "#a67d17"), 0.9))+ theme_bw() + 
+  theme(
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12),
+    plot.subtitle = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+E_melt_sum_plot <- ggplot(melt_summary, aes(x = WaterYear, y = trans_day_of_year, fill = Site)) +
+  geom_bar(stat = "identity", position = "dodge", aes(color=Site)) +
+  coord_cartesian(ylim = c(100, 180)) +
+      geom_text(aes(label = trans_day_of_year), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5, size = 3, fontface = "bold") + 
+  labs( x = NULL, y = "DOY of total snowmelt",
+    fill = "Site") + scale_fill_manual(values = alpha(c("#3283a8", "#a67d17"), 0.5)) +
+   scale_color_manual(values = alpha(c("#3283a8", "#a67d17"), 0.9)) + theme_bw() + 
+  theme(
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12),
+    plot.subtitle = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+
+k_flow_sum_plot <- ggplot(peakflow_sum, aes(x = WaterYear, y = peak_flow_day_of_year, fill = Site)) +
+  geom_bar(stat = "identity", position = "dodge", aes(color = Site)) +
+  geom_text(aes(label = peak_flow_day_of_year), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5, size = 3, fontface = "bold") + 
+  coord_cartesian(ylim = c(75, 160)) +
+  labs(x = "Water Year", y = "DOY of peak flow", fill = "Site") +
+  scale_fill_manual(values = alpha(c("#3283a8", "#a67d17"), 0.5)) +
+  scale_color_manual(values = alpha(c("#3283a8", "#a67d17"), 0.9)) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12),
+    plot.subtitle = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+
+
+snow_grid <- ggarrange(A_swe_plot, 
+                       D_peakSWE_sum_plot,
+                       B_delta_swe_plot,
+                       E_melt_sum_plot,
+                       C_flow_plot,
+                       k_flow_sum_plot,
+                       ncol = 2, nrow = 3,
+                       common.legend = TRUE, 
+                       #labels= c("a","b"),
+                        widths = c(3, 1),
+                       legend = "bottom")
+
+snow_grid
+# ggsave("SnowFlow_CH1_grid.png", plot = snow_grid, width = 12, height = 8, units = "in")
+
+# peakmelt_BW-peakSWE_BW
+# peakmelt_GB-peakSWE_GB
+
+# peakflow_BW - peakSWE_BW
+# peakflow_GB - peakSWE_GB
+```
+
+```{r, fig.align='center'}
+snow_grid
+```
+
+## B. Melt and stream flow.
+
+```{r, echo=FALSE, error=FALSE, warning=FALSE, message=FALSE}
+snowflow_dat <- left_join(result, flow_data, by = c("date", "Site"))
+
+snowflow_dat <- snowflow_dat %>%
+   mutate(Name = ifelse(Site == "BW", "BWL", ifelse(Site == "GB", "GBL", NA)))
+  
+
+# Attempt to correlate melt to SWE... 
+target_flow_plt <- 
+  ggplot(snowflow_dat,
+         aes(y=(daily_delta_SWE),
+             x=log(dischargeCFS+1), colour = as.factor(Site),shape=precipitation_quality)) + geom_smooth(method="lm")+ labs(x = 'log(Streamflow)') + geom_point()+
+  scale_color_manual(values=alpha(c("#a67d17", "#3283a8"),0.5)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        plot.subtitle = element_text(size = 18))+
+  theme(legend.position = "bottom")
+target_flow_plt
+
+# separate observations of negative delta SWE for site BW
+snowflow_BW <- snowflow_dat %>%
+  filter(Site=="BW", daily_delta_SWE<0)
+# summary(snowflow_BW)
+
+meltmod_BW <- lm(scale_Q ~ scale(daily_delta_SWE), data=snowflow_BW)
+summary(meltmod_BW)
+
+BW_snowflowplt <- 
+  ggplot(snowflow_BW,aes(x=(daily_delta_SWE*-1), y=scale_Q, colour = as.factor(Site))) + 
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(y = 'Streamflow (normalized to watershed area)', x="Melt (Delta SWE * -1)") + geom_point()+
+  scale_color_manual(values=alpha(c("#3283a8"),0.5)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        plot.subtitle = element_text(size = 18))+
+  theme(legend.position = "bottom")
+BW_snowflowplt
+
+# separate observations of negative delta SWE for site GB
+snowflow_GB <- snowflow_dat %>%
+  filter(Site=="GB", daily_delta_SWE<0)
+# summary(snowflow_GB)
+
+meltmod_GB <- lm(scale_Q ~ scale(daily_delta_SWE), data=snowflow_GB)
+summary(meltmod_GB)
+
+GB_snowflowplt <- 
+  ggplot(snowflow_GB,aes(x=(daily_delta_SWE*-1), y=scale_Q, colour = as.factor(Site))) + 
+  geom_smooth(method = "lm", se = FALSE) + 
+  labs(y = 'Streamflow (normalized to watershed area)', x="Melt (Delta SWE * -1)") + geom_point()+
+  scale_color_manual(values=alpha(c("#a67d17"),0.5)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        plot.subtitle = element_text(size = 18))+
+  theme(legend.position = "bottom")
+GB_snowflowplt
+```
+
+## C. Get better estimates of precipitation from PRISM.
+
+```{r, echo = FALSE, error=FALSE, warning=FALSE, message=FALSE}
+PRISM20 <- read.csv("/Users/kellyloria/Downloads/PRISM_ppt_tmin_tmean_tmax_vpdmin_vpdmax_stable_4km_20201001_20210901.csv", skip=10)
+
+PRISM21 <- read.csv("/Users/kellyloria/Downloads/PRISM_ppt_tmin_tmean_tmax_vpdmin_vpdmax_stable_4km_20211001_20220901.csv", skip=10)
+
+PRISM22 <- read.csv("/Users/kellyloria/Downloads/PRISM_ppt_tmin_tmean_tmax_vpdmin_vpdmax_provisional_4km_20221001_20230901.csv", skip=10)
+
+PRISMdata <- rbind(PRISM20,PRISM21, PRISM22)
+```
+
+Clean Prism data
+
+```{r, echo = FALSE, error=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+str(PRISMdata)
+PRISMdata <- PRISMdata %>%
+  mutate(date=as.Date(Date, format="%Y-%m-%d"))
+```
+
+PRISM Precipitation based on site coordinates:
+
+```{r, echo = FALSE, error=FALSE, warning=FALSE, message=FALSE}
+precip_plot_TS <- 
+  ggplot(PRISMdata, aes(x=as.Date(date), y=ppt..mm., colour = as.factor(Name))) + 
+  geom_line() +
+  scale_x_date(expand = c(0, 0), breaks = seq(as.Date("2020-10-01"), 
+                                              as.Date("2023-10-01"), "4 months"),
+               date_labels = "%b-%y") + labs(y = 'PRISM precip (mm)', x='Date (month-year)') +
+  scale_color_manual(values=alpha(c("#3283a8", "#8dcdeb",   # "#F9C74F"
+                                    "#a67d17", "#e3c476"),0.9)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10),
+        axis.title.x = element_text(size = 12),axis.title.y = element_text(size = 12),
+        plot.subtitle = element_text(size = 12))+
+  theme(legend.position = "none") + 
+  facet_grid(Name~.)
+precip_plot_TS
+```
+
+```{r, echo = FALSE, error=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+snowflowp_dat <- left_join(snowflow_dat, PRISMdata, by = c("date","Name"))
+```
+
+Compare SNOTEL and PRISM precipitation (dashed line is the 1:1 line).
+
+```{r, echo = FALSE, error=FALSE, warning=FALSE, message=FALSE}
+precip_plot <- 
+  ggplot(snowflowp_dat, aes(x=precipitation, y=ppt..mm., colour = as.factor(Name))) + 
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  labs(y = 'PRISM precip (mm)', x='SNOTWL precip (mm)') +
+  scale_color_manual(values=alpha(c("#3283a8", "#a67d17"),0.5)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10),
+        axis.title.x = element_text(size = 12),axis.title.y = element_text(size = 12),
+        plot.subtitle = element_text(size = 12))+
+  theme(legend.position = "none") + 
+  facet_grid(.~Name)
+precip_plot
+
+precip_cor <- lmer(ppt..mm.~scale(precipitation) + (1|Name), data= snowflowp_dat)
+summary(precip_cor)
+r.squaredGLMM(precip_cor)
+```
+
+PRISM and SNOTEL precipitation data are weakly correlated to one another (r^2 =0.2326). Moreover precipitation data varies by elevation which is more accurately captured in the SNOTEL data. So it seems best to use precipitation data from PRISM for any future inference.
+
+```{r, echo = FALSE, error=FALSE, warning=FALSE, message=FALSE}
+SFP_GB <- snowflowp_dat %>%
+  filter(Name=="GBL" & ppt..mm.>0)
+
+GB_precpflowplt <- 
+  ggplot(SFP_GB,aes(x=scale_Q, y=log(ppt..mm.+1), colour = as.factor(Name), shape=precipitation_quality)) + 
+  #geom_smooth(method = "lm", se = FALSE) + 
+  labs(x = 'Streamflow (normalized to watershed area)', y="Precip (mm) (shaped by delta SWE)") + 
+  geom_point()+
+  scale_color_manual(values=alpha(c("#a67d17"),0.5)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        plot.subtitle = element_text(size = 18))+
+  theme(legend.position = "bottom") +
+   facet_grid(. ~ precipitation_quality) 
+GB_precpflowplt
+
+SFP_BW <- snowflowp_dat %>%
+  filter(Name=="BWL" & ppt..mm.>0)
+  
+BW_precpflowplt <- 
+  ggplot(SFP_BW, aes(x=(scale_Q), y=log(ppt..mm.+1), colour = as.factor(Name), shape=precipitation_quality)) + 
+  #geom_smooth(method = "lm", se = FALSE) + 
+  labs(x = 'Q (normalized to watershed area)', y="log(Precip) (mm)") + 
+  geom_point()+
+  scale_color_manual(values=alpha(c("#3283a8"),0.5)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        plot.subtitle = element_text(size = 18))+
+  theme(legend.position = "bottom") +
+     facet_grid(. ~ precipitation_quality) 
+BW_precpflowplt
+
+SFP <- snowflowp_dat %>%
+  filter(ppt..mm.>0)
+
+precpflowplt <- 
+  ggplot(SFP, aes(x=log(scale_Q+1), y=log(ppt..mm.+1), colour = as.factor(Name), shape=precipitation_quality)) + 
+  #geom_smooth(method = "lm", se = FALSE) + 
+  labs(x = 'log(Q + 1) (normalized to watershed area)', y="log(Precip + 1) (mm)") + 
+  geom_point()+
+  scale_color_manual(values=alpha(c("#3283a8", "#a67d17"),0.5)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        plot.subtitle = element_text(size = 18))+
+  theme(legend.position = "bottom") +
+     facet_grid(. ~ precipitation_quality) 
+precpflowplt
+
+precflow_cor <- lmer(ppt..mm.~scale(scale_Q) + (1|Name), data= SFP)
+summary(precflow_cor)
+r.squaredGLMM(precflow_cor)
+```
+
+Quick summary of mean annual catchment normalized stream flow (cms)
+```{r}
+flow_data
+flow_sum <- water_year(flow_data)
+
+flow_sum1 <- flow_sum%>%
+  group_by(Site, WaterYear)%>%
+  summarise(mean_scale_Q= mean(scale_Q, na.rm=T))
+
+```
+
+
+
+
+#### Recap:
+
+Looks like melt dynamics are more correlated for BW relative to GB. There could be a stronger watershed filter, that prevents melt from reaching the stream in GB as well.
+
+PRISM is data appears more accurate for reach based inference. But precipitation and flow don't appear to be directly related. Where precipitation is only marginally positively related to streamflow at the lower locations (r^2 = 0.015).
+
+
+
+```{r, echo = FALSE, error=FALSE, warning=FALSE, message=FALSE}
+SFP_GB <- snowflowp_dat %>%
+  filter(Name=="GBL" & ppt..mm.>0)
+
+GB_precpflowplt <- 
+  ggplot(SFP_GB,aes(x=scale_Q, y=log(ppt..mm.+1), colour = as.factor(Name), shape=precipitation_quality)) + 
+  #geom_smooth(method = "lm", se = FALSE) + 
+  labs(x = 'Streamflow (normalized to watershed area)', y="Precip (mm) (shaped by delta SWE)") + 
+  geom_point()+
+  scale_color_manual(values=alpha(c("#a67d17"),0.5)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        plot.subtitle = element_text(size = 18))+
+  theme(legend.position = "bottom") +
+   facet_grid(. ~ precipitation_quality) 
+GB_precpflowplt
+
+SFP_BW <- snowflowp_dat %>%
+  filter(Name=="BWL" & ppt..mm.>0)
+  
+BW_precpflowplt <- 
+  ggplot(SFP_BW, aes(x=(scale_Q), y=log(ppt..mm.+1), colour = as.factor(Name), shape=precipitation_quality)) + 
+  #geom_smooth(method = "lm", se = FALSE) + 
+  labs(x = 'Q (normalized to watershed area)', y="log(Precip) (mm)") + 
+  geom_point()+
+  scale_color_manual(values=alpha(c("#3283a8"),0.5)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        plot.subtitle = element_text(size = 18))+
+  theme(legend.position = "bottom") +
+     facet_grid(. ~ precipitation_quality) 
+BW_precpflowplt
+
+SFP <- snowflowp_dat %>%
+  filter(ppt..mm.>0)
+
+precpflowplt <- 
+  ggplot(SFP, aes(x=log(scale_Q+1), y=log(ppt..mm.+1), colour = as.factor(Name), shape=precipitation_quality)) + 
+  #geom_smooth(method = "lm", se = FALSE) + 
+  labs(x = 'log(Q + 1) (normalized to watershed area)', y="log(Precip + 1) (mm)") + 
+  geom_point()+
+  scale_color_manual(values=alpha(c("#3283a8", "#a67d17"),0.5)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        plot.subtitle = element_text(size = 18))+
+  theme(legend.position = "bottom") +
+     facet_grid(. ~ precipitation_quality) 
+precpflowplt
+
+precflow_cor <- lmer(ppt..mm.~scale(scale_Q) + (1|Name), data= SFP)
+summary(precflow_cor)
+r.squaredGLMM(precflow_cor)
+```
+
+Quick summary of mean annual catchment normalized stream flow (cms)
+```{r}
+flow_data
+flow_sum <- water_year(flow_data)
+
+flow_sum1 <- flow_sum%>%
+  group_by(Site, WaterYear)%>%
+  summarise(mean_scale_Q= mean(scale_Q, na.rm=T))
+
+```
+
