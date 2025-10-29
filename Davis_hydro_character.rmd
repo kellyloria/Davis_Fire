@@ -92,8 +92,8 @@ ophir_data_info
 
 ```{r eval=TRUE, echo = TRUE, error=FALSE, warning=FALSE, message=FALSE, include=F}
 
-ophir_data_info <- whatNWISdata(siteNumbers = siteNo_davis)
-ophir_data_info
+davis_data_info <- whatNWISdata(siteNumbers = siteNo_davis)
+davis_data_info
 ```
 
 ```{r eval=TRUE, echo = TRUE, error=FALSE, warning=FALSE, message=FALSE, include=FALSE}
@@ -674,12 +674,14 @@ ggplotly(p)
 
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
 
-davis_ppt <- read.csv("C:/Users/kloria/Documents/Davis_data_exploration/prism_cat.csv")
+davis_ppt <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/ShinyERDC/Processed_data/prism_cat_new.csv")
 #View(davis_data)
 str(davis_ppt)
 
 davis_ppt <- davis_ppt %>%
   mutate(date= as.Date(Date))
+
+range(davis_ppt$Date)
 ```
 
 ### PRISM 
@@ -1033,7 +1035,17 @@ ggplot(flow_snow_df3, aes(x = ppt..mm., fill = factor(peak_flow_event_flag))) +
 - Look at flow 3 days before a PPT and 3 days after PPT PRISM to get a rank of influential storm (H, M, L)
 
 ```{r, echo=FALSE, include=FALSE}
-# saveRDS(flow_snow_df2, "./Davis_fire_flow_PPT.rds")
+# saveRDS(flow_snow_df1, "./Davis_fire_flow_PPT.rds")
+
+flow_snow_save <-flow_snow_df1%>%
+  mutate(date = as.Date(date)) %>%
+  filter(!Name == "browns") %>%
+  group_by(Name, date) %>%
+  summarise(flow = mean(dischargeCMS, na.rm = TRUE)) %>%
+  filter(date > as.Date("2023-09-30"))
+
+write_csv(flow_snow_save, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/ShinyERDC/Processed_data/flow_snow_save.csv")
+
 
 ```
 

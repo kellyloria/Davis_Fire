@@ -245,6 +245,6 @@ merged_df <- merged_df%>%
                 "Ba_DL_lab", "Ba_QC", "Ca_DL_lab", "Ca_QC", "Cr_DL_lab", "Cr_QC",
                 "Fe_DL_lab", "Fe_QC", "Mn_DL_lab", "Mn_QC", "Pb_DL_lab", "Pb_QC",
                 "Sr_DL_lab" , "Sr_QC", "Zn_DL_lab", "Zn_QC")
-
+summary(merged_df)
 ## Save data
-# write.csv(merged_df, "/Users/kellyloria/Documents/DRI\ /ERDC_Davis_Fire/Processes_data/ERDC_water_chem_dat_20251015_processed.csv", row.names = FALSE)
+# write.csv(merged_df, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_chem_dat_20251015_processed.csv", row.names = FALSE)
