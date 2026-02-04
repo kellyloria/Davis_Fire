@@ -34,15 +34,15 @@ PRISMdata <- csv_files %>%
 glimpse(PRISMdata)
 
 
-# write.csv(PRISMdata, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/prism_cat_08_10.csv")
+# write.csv(PRISMdata, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/prism_cat_12_10.csv")
 
 
 ## bring old and new 
 old_prism <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/prism_cat.csv")
 names(old_prism)
 
-new_prism <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/prism_cat_08_10.csv")%>%
-  select("X", "Name", "Longitude", "Latitude", "Elevation..m.",  "Date", "ppt..mm.", "tmean..degrees.C.")
+new_prism <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/prism_cat_12_10.csv")%>%
+  dplyr::select("X", "Name", "Longitude", "Latitude", "Elevation..m.",  "Date", "ppt..mm.", "tmean..degrees.C.")
 names(new_prism)
 
 

@@ -99,8 +99,7 @@ davis_data <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data
     Site == "Browns" ~ "browns", 
     Site == "Browns HW" ~ "browns_hw",
     Site == "Browns sub" ~ "browns_sub",
-    Site == "Browns Sub" ~ "browns_sub")) %>%
-  filter(date<=as.Date("2025-09-15"))
+    Site == "Browns Sub" ~ "browns_sub")) %>%  filter(date<=as.Date("2025-11-19"))
 
 names(davis_data)
 str(davis_data)

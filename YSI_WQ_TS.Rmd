@@ -1,0 +1,268 @@
+---
+title: 'YSI water quality overtime'
+author: "Kelly Loria"
+date: "`r Sys.Date()`"
+output:
+   html_document:
+    theme: united
+    highlight: tango
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{=html}
+<style type="text/css">
+body, td {font-size: 12px;}
+code.r{font-size: 8px;}
+pre {font-size: 10px}
+</style>
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = F, message = F)
+#knitr::opts_knit$set(root.dir = 'C/Users/kloria/Documents/Davis_data_exploration/')
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\n \\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+
+```
+
+```{r, echo = F, message = F}
+### Packages
+#setwd("C/Users/kloria/Documents/Davis_data_exploration/")
+
+library(tidyverse)
+library(lubridate)
+library(dataRetrieval)
+library(viridis)
+library(cowplot)
+library(zoo)
+library(readxl)
+library(ggpubr)
+library(knitr)
+library(kableExtra)
+library(plotly)
+library(readxl)
+library(ggpmisc)
+
+site_colors <- c(
+  "Ophir" = "#7d5ba6",
+  "Winters" = "#4287f5",
+  "Winters upstream" = "#7fc5f0",
+  "Davis" = "#d9cb7c",
+  "Browns" = "#c94d00", 
+  "Browns sub"  = "#bd772d"
+)
+
+
+site_lab_colors <- c(
+  "ophir" = "#7d5ba6",
+    "ophir_hw" = "#7d1ba6",
+  "winters_usgs" = "#4287f5",
+  "winters_up" = "#7fc5f0",
+  "davis" = "#d9cb7c",
+  "browns" = "#c94d00", 
+  "browns_sub"  = "#bd772d",
+   "browns_hw"  = "#bd272d"
+)
+
+
+```
+
+
+```{r, eval=TRUE, echo = F, error=FALSE, warning=FALSE, message=FALSE}
+##### Function for water year:
+# fxn for water year
+water_year <- function(data) {
+  data %>%
+    mutate(date = ymd(date)) %>%
+    mutate(WaterYear = if_else(month(date) >= 10, year(date) + 1, year(date)))
+}
+```
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+# Chem data
+davis_data <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/YSI_KOR_dat_20251210_processed.csv") %>% 
+  mutate(datetime = round_date(as.POSIXct(datetime, format="%Y-%m-%d %H:%M:%S"), unit="5 minutes"),
+         date = as.Date(datetime)) %>%
+    mutate(site_lab = case_when(
+    stream == "davis" ~ "davis", 
+    stream ==  "ophir creek" ~ "ophir",
+    stream ==  "winters creek" ~ "winters_usgs",
+    stream == "wc usgs gage" ~ "winters_usgs",
+    stream ==  "winters up" ~ "winters_up",
+    stream == "browns creek" ~ "browns", 
+    stream == "browns creek sub" ~ "browns_sub")) 
+
+names(davis_data)
+str(davis_data)
+```
+
+### Check long:
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=8, fig.height=3}
+
+p1 <- davis_data %>%
+  ggplot(aes(x = site_lab,
+             y = long.)) +
+  geom_point(
+    alpha = 0.8, size = 2, 
+    aes(color = site_lab),
+    position = position_jitter(width = 0.1),  
+    shape = 19) +
+  scale_fill_manual(values = site_lab_colors) +
+  scale_color_manual(values = site_lab_colors) +
+  theme_minimal()
+
+p1
+
+```
+
+
+
+### Check lat:
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=8, fig.height=3}
+
+p1 <- davis_data %>%
+  ggplot(aes(x = site_lab,
+             y = lat.)) +
+  geom_point(
+    alpha = 0.8, size = 2, 
+    aes(color = site_lab),
+    position = position_jitter(width = 0.1),  
+    shape = 19) +
+  scale_fill_manual(values = site_lab_colors) +
+  scale_color_manual(values = site_lab_colors) +
+  theme_minimal()
+
+p1
+
+```
+
+
+
+
+### Check elevation:
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=8, fig.height=3}
+
+p1 <- davis_data %>%
+  ggplot(aes(x = site_lab,
+             y = altitude_m)) +
+  geom_point(
+    alpha = 0.8, size = 2, 
+    aes(color = site_lab),
+    position = position_jitter(width = 0.1),  
+    shape = 19) +
+  scale_fill_manual(values = site_lab_colors) +
+  scale_color_manual(values = site_lab_colors) +
+  theme_minimal()
+
+p1
+
+```
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=8, fig.height=3}
+
+p1 <- davis_data %>%
+  ggplot(aes(x = long.,
+             y = lat.)) +
+  geom_point(
+    alpha = 0.8, size = 2, 
+    aes(color = site_lab),
+    position = position_jitter(width = 0.1),  
+    shape = 19) +
+  scale_fill_manual(values = site_lab_colors) +
+  scale_color_manual(values = site_lab_colors) +
+  theme_minimal()
+
+p1
+
+```
+
+
+### remove outlier lat/long/elevation 
+
+```{r, warning=F, size = 'small', echo=FALSE, include=T}
+
+davis_dat <- davis_data %>%
+  filter(!(site_lab == "ophir" & altitude_m > 1780)) %>%
+    filter(!(site_lab == "browns" & altitude_m > 1780)) %>%
+      filter(!(site_lab == "browns" & altitude_m < 1600))
+  
+  
+
+p1 <- davis_dat %>%
+  ggplot(aes(x = site_lab,
+             y = altitude_m)) +
+  geom_point(
+    alpha = 0.8, size = 2, 
+    aes(color = site_lab),
+    position = position_jitter(width = 0.1),  
+    shape = 19) +
+  scale_fill_manual(values = site_lab_colors) +
+  scale_color_manual(values = site_lab_colors) +
+  theme_minimal()
+
+p1
+
+```
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+# write.csv(davis_dat, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ysi_WQ_QAQC.csv")
+```
+
+#### Daily means and standard deviations for repeated logged water quality at each site/date 
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+
+
+davis_dat_day <- davis_dat %>%
+  group_by(site_lab, date) %>%
+  summarise(
+    across(4:22,
+           list(mean = ~mean(.x, na.rm = TRUE),
+                sd   = ~sd(.x, na.rm = TRUE)),
+           .names = "{.col}_{.fn}")
+  ) %>%
+  ungroup()
+
+```
+
+```{r, warning=F, size = 'small', echo=FALSE, include=T}
+
+p1 <- davis_dat_day %>%
+  ggplot(aes(x = date, 
+             y = pH_mean,
+             color = site_lab,
+             group = site_lab)) +
+  geom_line(size = 1) +  # connects daily averages over time
+  geom_point(size = 2, alpha = 0.9) +  # plot mean points
+  geom_errorbar(aes(ymin = pH_mean - pH_sd,
+                    ymax = pH_mean + pH_sd),
+                width = 0.2, alpha = 0.6) +  # SD error bars
+  scale_color_manual(values = site_lab_colors) +
+  labs(x = "Date",
+       y = "Ph",
+       color = "Site") +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom")
+
+p1
+```
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+# write.csv(davis_dat_day, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ysi_WQ_QAQC_daily.csv")
+
+```
+
+
+End script.
+

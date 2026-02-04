@@ -1,0 +1,2066 @@
+---
+title: "ERDC Davis Fire MS L-Q analysis: Double mass curves and L-Q slope breakpoints"
+author: "Kelly Loria"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: united
+    highlight: tango
+  pdf_document: default
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{=html}
+<style type="text/css">
+body, td {font-size: 12px;}
+code.r{font-size: 8px;}
+pre {font-size: 10px}
+</style>
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(
+  fig.width  = 7,     # inches
+  fig.height = 9,     # inches
+  fig.retina = 2,     # sharper in HTML
+  out.width  = "80%"  # “medium” on the page (HTML); can use "70%" etc.
+)
+knitr::opts_chunk$set(warning = F, message = F)
+#knitr::opts_knit$set(root.dir = 'C/Users/kloria/Documents/Davis_data_exploration/')
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\n \\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+
+```
+
+```{r, echo = F, message = F}
+### Packages
+#setwd("C/Users/kloria/Documents/Davis_data_exploration/")
+
+library(tidyverse)
+library(lubridate)
+library(dataRetrieval)
+library(viridis)
+library(cowplot)
+library(zoo)
+library(readxl)
+library(ggpubr)
+library(knitr)
+library(kableExtra)
+library(plotly)
+library(readxl)
+library(ggpmisc)
+library(slider)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(broom)
+library(ggpubr)
+
+
+site_colors <- c(
+  "ophir" = "#7d5ba6",
+  "winters_usgs" = "#4287f5",
+  "winters_up" = "#7fc5f0",
+  "davis" = "#d9cb7c",
+  "browns" = "#c94d00", 
+  "browns_sub"  = "#bd772d"
+)
+
+site_colors_OL <- c(
+  "A_ophir" = "#7d5ba6",
+  "F_winters_usgs" = "#4287f5",
+  "E_winters_up" = "#7fc5f0",
+  "B_davis" = "#d9cb7c",
+  "D_browns" = "#c94d00",
+  "C_browns_sub"  = "#bd772d"
+)
+
+# site_colors_OL <- c(
+#   "ophir" = "#7d5ba6",
+#   "winters_usgs" = "#4287f5",
+#   "winters_up" = "#7fc5f0",
+#   "davis" = "#d9cb7c",
+#   "browns" = "#c94d00", 
+#   "browns_sub"  = "#bd772d"
+# )
+
+ref_date <-c(as.Date("2024-09-25"))
+```
+
+
+```{r, eval=TRUE, echo = F, error=FALSE, warning=FALSE, message=FALSE}
+##### Function for water year:
+# fxn for water year
+water_year <- function(data) {
+  data %>%
+    mutate(date = ymd(date)) %>%
+    mutate(WaterYear = if_else(month(date) >= 10, year(date) + 1, year(date)))
+}
+```
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+# Chem data
+
+test_dat <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_only_chem_dat_processed.csv") %>%
+  dplyr::select(-site) %>%             
+  rename(site = site_lab) %>%     
+  mutate(
+    date = as.Date(date),
+    datetime = as.POSIXct(datetime) 
+  ) %>%
+    mutate(date=as.Date(date),
+         datetime =as.POSIXct(datetime)) %>%
+    mutate(burn_area = case_when(
+    site== "ophir" ~ 0,
+    site== "davis" ~ 10,
+    site == "winters_usgs" ~ 65,
+    site == "winters_up" ~ 62,
+    site == "browns" ~ 42, 
+    site == "browns_sub" ~ 41)) 
+
+### Create a new column for Sr:B
+test_dat <- test_dat%>%
+  mutate(Sr_B_QC = c(Sr_QC/B_QC))
+
+
+```
+
+### ============================================================================
+
+## I. Characterize hydroclimate condtions
+
+### ============================================================================
+
+
+ - How do sampling events reflect baseflow or runoff?
+ 
+ - When did the largest transport events happen in each site?
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+# Chem data
+
+flow_dat <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_hourlyflow.csv") %>%
+  mutate(date=as.Date(date)) %>% # %>%  filter((site=="davis")) %>%
+    mutate(Name = case_when(
+    site== "ophir" ~ "ophir",
+    site == "winters_usgs" ~ "winters",
+    site == "winters_up" ~ "winters",
+    site == "browns" ~ "browns", 
+    site == "browns_sub" ~ "browns",
+    site == "davis" ~ "davis"))
+
+str(flow_dat)
+
+# Load precipitation data
+ppt_dat <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/prism_cat_new.csv") %>%
+  mutate(
+    date = as.Date(Date, format = "%Y-%m-%d"),
+    lagPPT = lag(ppt..mm.),
+    lag_C_PPT = ppt..mm. + lagPPT) %>%
+  dplyr::select(Name, date, ppt..mm., lag_C_PPT)
+
+new_df_hydro <-flow_dat %>%
+  left_join(ppt_dat, by=c("date", "Name")) 
+
+```
+
+### Create variable that corresponds with PPT flow increase
+
+```{r, warning=F, size = 'small', echo=T, include=T}
+head(new_df_hydro)
+### infill missing flow:
+new_df_hydro <- new_df_hydro %>%
+  arrange(site, date) %>%
+  group_by(site) %>%
+  mutate(
+    flow_filled = na.approx(flow, x = date, na.rm = FALSE)
+  ) %>%
+  ungroup()
+
+N <- 7  # Set pre-event window length in days
+
+df2 <- new_df_hydro %>%
+    filter(date > as.Date("2024-09-10")) %>%
+  arrange(site, date) %>%
+  group_by(site) %>%
+  mutate(
+    # rolling sd of previous N days of flow
+    sd_preN = slide_dbl(flow, sd, .before = N, .after = -1, na.rm = TRUE),
+
+    event_start = (lag_C_PPT > 0) & (lag(lag_C_PPT, default = 0) <= 0),
+    Q_pre = if_else(event_start, lag(flow), NA_real_),
+    sd_event = if_else(event_start, sd_preN, NA_real_),
+
+    # carry forward event baseline + sd until next event start
+    Q_pre_event = tidyr::fill(data.frame(Q_pre = Q_pre), Q_pre, .direction = "down")$Q_pre,
+    sd_event_f  = tidyr::fill(data.frame(sd_event = sd_event), sd_event, .direction = "down")$sd_event,
+
+    Q_thresh = Q_pre_event + 2 * sd_event_f,
+
+    runoff = case_when(
+      lag_C_PPT > 0 ~ "yes",
+      !is.na(Q_thresh) & flow > Q_thresh ~ "yes",
+      TRUE ~ "no"
+    ),
+
+    dQ = flow - lag(flow),
+    runoff_dQ = if_else(runoff == "yes", dQ, NA_real_)
+  ) %>%
+  ungroup()
+
+```
+
+### Daily flow with runoff (green)
+#### Black outlines mark sample collection
+
+```{r, warning=F, echo=FALSE, include=T}
+site_labs <- c(
+browns = "Browns",
+browns_sub = "Browns sub.",
+davis = "Davis",
+ophir = "Ophir",
+winters_up = "Winters up.",
+winters_usgs = "Winters USGS"
+)
+library(ggnewscale)
+
+
+
+# 1) sampling keys (unique site-date combos)
+test_keys <- test_dat %>%
+  transmute(
+    site   = site,
+    date   = as.Date(date),
+    est_obs = "yes"
+  ) %>%
+  distinct(site, date, .keep_all = TRUE)
+
+# 2) join + fill non-sampled days
+df_plot <- df2 %>%
+  mutate(date = as.Date(date)) %>%
+  full_join(test_keys, by = c("site", "date")) %>%
+  mutate(est_obs = if_else(is.na(est_obs), "no", est_obs))
+
+# 3) factor by burn area
+df_plot <- df_plot %>%
+  mutate(burn_area = case_when(
+    site== "ophir" ~ 0,
+    site== "davis" ~ 10,
+    site == "winters_usgs" ~ 65,
+    site == "winters_up" ~ 62,
+    site == "browns" ~ 42, 
+    site == "browns_sub" ~ 41)) %>%
+    mutate(
+    site = fct_reorder(site, burn_area, .fun = min, .desc = FALSE)
+  )
+
+# 4) plot
+flow_plot <- ggplot(df_plot %>% filter(date < as.Date("2025-12-13")), aes(x = date, y = flow)) +
+    geom_vline(xintercept = as.Date("2024-09-25"), linetype = "dashed") +
+
+
+  ##
+    # ---- Lines colored by site ----
+geom_line(aes(color = site), linewidth = 0.7, na.rm = TRUE) +
+scale_color_manual(
+values = site_colors,
+labels = site_labs,
+name = "Site"
+) +
+ggnewscale::new_scale_color() +
+
+  geom_point(
+    data = df_plot %>% filter(runoff == "yes") %>% filter(date < as.Date("2025-12-13")),
+    aes(color = runoff),
+    size = 1.25,
+    alpha = 0.5,
+    na.rm = TRUE
+) +
+  scale_color_manual(
+    values = c("yes" = "grey60"),
+    name = "Runoff"
+  ) +
+  ##
+  
+   # overlay: outline points where sampling occurred
+  geom_point(
+    data = df_plot %>% filter(est_obs == "yes"),
+    aes(x = date, y = flow),
+    shape = 21,
+    fill = NA,
+    color = "black",
+    stroke = 1.2,
+    size = 1.15,
+    na.rm = TRUE
+  ) +
+
+ facet_grid(site~., scales = "free_y") +
+
+  scale_color_manual(
+    values = c("yes" = "grey60"),
+    name = "Runoff"
+  ) +
+
+  labs(
+    x = "Date",
+    y = "Discharge (cms)"
+  ) +
+  theme_bw() +
+  scale_x_date(date_breaks = "2 month", date_labels = "%b-%y") +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold")
+  )
+
+print(flow_plot)
+
+```
+
+```{r,  fig.width=7, fig.height=4.25, out.width="85%"}
+## not faceted 
+
+flow_plot2 <- ggplot(
+  df_plot %>% filter(date < as.Date("2025-12-14")),
+  aes(x = date, y = flow)
+) +
+  geom_vline(xintercept = as.Date("2024-09-25"), linetype = "dashed") +
+
+  # ---- Lines colored by site ----
+geom_line(aes(color = site), linewidth = 0.7, na.rm = TRUE) +
+scale_color_manual(
+values = site_colors,
+labels = site_labs,
+name = "Site"
+) +
+ggnewscale::new_scale_color() +
+
+  geom_point(
+    data = df_plot %>% filter(runoff == "yes") %>% filter(date < as.Date("2025-12-13")),
+    aes(color = runoff),
+    size = 1.25,
+    alpha = 0.25,
+    na.rm = TRUE
+) +
+  scale_color_manual(
+    values = c("yes" = "grey60"),
+    name = "Runoff"
+  ) +
+
+  # ---- Sampling outline ----
+  geom_point(
+    data = df_plot %>% filter(est_obs == "yes"),
+    aes(x = date, y = flow),
+    shape = 21,
+    fill = NA,
+    color = "black",
+    stroke = 1.2,
+    size = 1.15,
+    na.rm = TRUE
+  ) +
+  labs(
+    x = "Date (%b-%y)",
+    y = "Discharge (cms)"
+  ) +
+  theme_bw() +
+  scale_x_date(date_breaks = "5 week", date_labels = "%b-%y", limits = c(as.Date("2024-09-07"), as.Date("2025-12-13"))) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold")
+  )
+
+print(flow_plot2)
+
+```
+
+```{r,  fig.width=7, fig.height=4.25, out.width="85%"}
+
+### p3 normalized by km 
+library(dplyr)
+
+df_plot_norm <- df_plot %>%
+  mutate(
+    catchment_area = case_when(
+      site == "ophir"         ~ 15.1,
+      site == "davis"         ~ 4.3,
+      site == "browns"        ~ 9.8,
+      site == "browns_sub"    ~ 9.4,
+      site == "winters_usgs"  ~ 5.4,
+      site == "winters_up"    ~ 4.8,
+      TRUE ~ NA_real_
+    ),
+    
+    # normalized flow (choose flow or flow_filled)
+    flow_norm = flow / catchment_area
+    # or: flow_norm = flow_filled / catchment_area
+  )
+
+flow_plot3 <- ggplot(
+  df_plot_norm %>% filter(date < as.Date("2025-12-14")),
+  aes(x = date, y = flow_norm)
+) +
+  geom_vline(xintercept = as.Date("2024-09-25"), linetype = "dashed") +
+
+  # ---- Lines colored by site ----
+geom_line(aes(color = site), linewidth = 0.7, na.rm = TRUE) +
+scale_color_manual(
+values = site_colors,
+labels = site_labs,
+name = "Site"
+) +
+ggnewscale::new_scale_color() +
+
+  geom_point(
+    data = df_plot_norm %>% filter(runoff == "yes") %>% filter(date < as.Date("2025-12-13")),
+    aes(color = runoff),
+    size = 1.25,
+    alpha = 0.25,
+    na.rm = TRUE
+) +
+  scale_color_manual(
+    values = c("yes" = "grey60"),
+    name = "Runoff"
+  ) +
+
+  # ---- Sampling outline ----
+  geom_point(
+    data = df_plot_norm %>% filter(est_obs == "yes"),
+    aes(x = date, y = flow_norm),
+    shape = 21,
+    fill = NA,
+    color = "black",
+    stroke = 1.2,
+    size = 1.15,
+    na.rm = TRUE
+  ) +
+  labs(
+    x = "Date (%b-%y)",
+    y = expression("Catchment normalized flow (" * m^3 * s^{-1} * " " * km^{-1} * ")")
+  ) +
+  theme_bw() +
+  scale_x_date(date_breaks = "5 week", date_labels = "%b-%y", limits = c(as.Date("2024-09-07"), as.Date("2025-12-13"))) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold")
+  )
+
+print(flow_plot3)
+```
+
+```{r, echo=FALSE, include =F}
+# ggsave(plot = flow_plot, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_hydrograph_plot.png",sep=""),width=5,height=10,dpi=300)
+
+```
+
+
+```{r, echo=FALSE, include =F}
+# ggsave(plot = flow_plot2, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_hydrograph_plot_v2.png",sep=""),width=8,height=4.5,dpi=300)
+
+```
+
+
+
+```{r, echo=FALSE, include =F}
+# ggsave(plot = flow_plot3, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_hydrograph_plot_v3.png",sep=""),width=8,height=4.5,dpi=300)
+
+```
+
+```{r, warning=F, echo=FALSE, include=F}
+
+df_plot2 <- df_plot %>%
+  mutate(
+    pptm = coalesce(ppt..mm., 0)
+  )
+
+flow_plot <- ggplot(df_plot2, aes(x = date)) +
+
+  # PPT bars behind (draw first)
+  geom_col(
+    data = df_plot2 %>% filter(pptm > 0),
+    aes(x = date, y = pptm/100),
+    inherit.aes = FALSE,
+    alpha = 0.25,
+    width = 1
+  ) +
+
+  geom_line(aes(y = flow), color = "grey40", linewidth = 0.7, na.rm = TRUE) +
+  geom_point(aes(y = flow, color = runoff), size = 1, alpha = 0.9, na.rm = TRUE) +
+
+  geom_point(
+    data = df_plot2 %>% filter(est_obs == "yes"),
+    aes(x = date, y = flow),
+    inherit.aes = FALSE,
+    shape = 21, fill = NA, color = "black",
+    stroke = 1.2, size = 1.15, na.rm = TRUE
+  ) +
+
+  facet_grid(site ~ ., scales = "free_y") +
+  scale_color_manual(values = c("yes" = "#1b9e77", "no" = "grey60"), name = "Runoff") +
+  scale_x_date(date_breaks = "2 month", date_labels = "%b-%y") +
+  labs(x = "Date", y = "Flow (cms) / Ppt (mm, relative)") +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold")
+  )
+
+print(flow_plot)
+
+```
+
+```{r, warning=F, echo=FALSE, include=T}
+
+events <- df2 %>%
+  filter(date < as.Date("2025-12-15")) %>%
+  arrange(site, date) %>%
+  group_by(site) %>%
+  mutate(
+    event_id = cumsum(replace_na(event_start, FALSE)),  
+    exceed = if_else(runoff == "yes" & !is.na(Q_thresh), pmax(flow - Q_thresh, 0), NA_real_)
+  ) %>%
+  ungroup() %>%
+  filter(event_id > 0) %>%                
+  group_by(site, event_id) %>%
+  summarise(
+    event_start_date = min(date[runoff == "yes"], na.rm = TRUE),
+    event_end_date   = max(date[runoff == "yes"], na.rm = TRUE),
+
+    peak_flow_date   = date[which.max(if_else(runoff == "yes", flow, -Inf))][1],
+    peak_flow        = max(if_else(runoff == "yes", flow, NA_real_), na.rm = TRUE),
+
+    peak_exceed_date = date[which.max(replace_na(exceed, -Inf))][1],
+    peak_exceed      = max(exceed, na.rm = TRUE),
+
+    peak_dQ_date     = date[which.max(if_else(runoff == "yes", dQ, -Inf))][1],
+    peak_dQ          = max(if_else(runoff == "yes", dQ, NA_real_), na.rm = TRUE),
+
+    total_exceed     = sum(exceed, na.rm = TRUE),        
+    n_runoff_days    = sum(runoff == "yes", na.rm = TRUE),
+    .groups = "drop"
+  )
+
+```
+
+### Look at run off largest events:
+
+#### A. Biggest peak exceedance
+
+```{r, warning=F, echo=FALSE, include=T}
+largest_runoff_by_exceed <- events %>%
+  group_by(site) %>%
+  slice_max(order_by = peak_exceed, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+largest_runoff_by_exceed
+```
+
+#### B. Biggest peak flow
+
+```{r, warning=F, echo=FALSE, include=T}
+largest_runoff_by_peakQ <- events %>%
+  group_by(site) %>%
+  slice_max(order_by = peak_flow, n = 1, with_ties = FALSE) %>%
+  ungroup()
+largest_runoff_by_peakQ
+```
+
+
+### ============================================================================
+
+## II. Double mass curves: Calculate interval-based loads
+
+### ============================================================================
+
+#### For each chemistry sample, calculate:
+
+##### 1. Cumulative discharge from start to that sample date
+
+##### 2. Load for that interval = concentration × discharge volume in interval
+
+##### 3. Cumulative load over time
+
+### =========
+
+#### STEP 1: Prepare discharge data (daily values) + DOC loads
+
+### =========
+
+
+#### One-time setup: parameter tables + helpers
+
+```{r, warning=F, echo=FALSE, include=T}
+# Which analytes to include + unit conversion to mg/L
+# (DOC etc already mg/L => factor 1; trace in ug/L => /1000 to mg/L)
+analytes <- tibble::tribble(
+  ~analyte, ~col,        ~togL,
+  "DOC",    "DOC_QC",     1,
+  "BC",     "BC_QC",      1,
+  "TOC",    "TOC_QC",     1,
+  "TDN",    "TDN_QC",     1,
+  "PO4_P",  "PO4.P_QC",   1,
+  "As",     "As_QC",      1/1000,
+  "Al",     "Al_QC",      1/1000,
+  "Ba",     "Ba_QC",      1/1000,
+  "Ca",     "Ca_QC",      1/1000,
+  "Cr",     "Cr_QC",      1/1000,
+  "Fe",     "Fe_QC",      1/1000,
+  "Pb",     "Pb_QC",      1/1000,
+  "Mn",     "Mn_QC",      1/1000,
+  "Sr",     "Sr_QC",      1/1000,
+  "Zn",     "Zn_QC",      1/1000,
+  "B",      "B_QC",       1/1000,
+  "Sr_B",   "Sr_B_QC",    1/1000,
+)
+
+label_site <- function(site){
+  dplyr::case_when(
+    site == "ophir" ~ "A_ophir",
+    site == "davis" ~ "B_davis",
+    site == "browns_sub" ~ "C_browns_sub",
+    site == "browns" ~ "D_browns",
+    site == "winters_up" ~ "E_winters_up",
+    site == "winters_usgs" ~ "F_winters_usgs",
+    TRUE ~ site
+  )
+}
+
+```
+
+### Flow + storm flags (unchanged logic, but isolated)
+
+```{r, warning=F, echo=T, include=T}
+prep_flow <- function(new_df_hydro, flow_start = as.Date("2024-10-01")) {
+  new_df_hydro %>%
+    filter(date >= flow_start) %>%
+    mutate(sec_per_day = 86400) %>%
+    arrange(site, date) %>%
+    group_by(site) %>%
+    mutate(
+      Q_daily_liters = replace_na(flow_filled, 0) * 1000 * sec_per_day,
+      Q_c_liters     = cumsum(Q_daily_liters),
+      ppt_daily_cum  = cumsum(ppt..mm.)
+    ) %>%
+    ungroup()
+}
+
+prep_storm_flags <- function(events, test_keys) {
+  events_key_dates <- events %>%
+    dplyr::select(site, event_start_date, event_end_date,
+           peak_flow_date, peak_exceed_date, peak_dQ_date) %>%
+    pivot_longer(cols = -site, names_to = "date_type", values_to = "date") %>%
+    filter(!is.na(date)) %>%
+    distinct(site, date)
+
+  test_keys %>%
+    dplyr::select(site, date) %>%
+    inner_join(events_key_dates, by = c("site", "date")) %>%
+    transmute(site, date, storm = "storm") %>%
+    distinct()
+}
+
+```
+
+### Core: interval loads + cumulative loads for all analytes 
+
+```{r, warning=F, echo=T, include=T}
+
+prep_chem_loads_long <- function(test_dat, flow_df, storm_df, analytes_tbl,
+                                 chem_start = as.Date("2024-09-30")) {
+
+  chem_long <- test_dat %>%
+    filter(date >= chem_start) %>%
+    dplyr::select(site, date, all_of(analytes_tbl$col)) %>%
+    pivot_longer(cols = all_of(analytes_tbl$col), names_to = "col", values_to = "conc_raw") %>%
+    filter(!is.na(conc_raw)) %>%                       # keep actual chem samples
+    left_join(analytes_tbl, by = "col") %>%
+    mutate(concgL = conc_raw * togL)
+
+  chem_long %>%
+    left_join(flow_df %>% dplyr::select(site, date, Q_c_liters), by = c("site", "date")) %>%
+    left_join(storm_df, by = c("site", "date")) %>%
+    mutate(site_OL = label_site(site)) %>%
+    arrange(site_OL, analyte, date) %>%
+    group_by(site_OL, analyte) %>%
+    mutate(
+      Q_interval_liters = Q_c_liters - lag(Q_c_liters, default = 0),
+      load_intervalg  = concgL * Q_interval_liters,
+      load_cumg       = cumsum(replace_na(load_intervalg, 0))
+    ) %>%
+    ungroup()
+}
+
+```
+
+
+### Fxn to fit DMC models for any analyte 
+
+```{r, warning=F, echo=T, include=T}
+fit_dmc <- function(dmc_long, analyte_name = "DOC") {
+  df <- dmc_long %>%
+    filter(analyte == analyte_name) %>%
+    group_by(site_OL) %>%
+    mutate(
+      load_c_norm = load_cumg / max(load_cumg, na.rm = TRUE),
+      Q_c_norm    = Q_c_liters  / max(Q_c_liters,  na.rm = TRUE)
+    ) %>%
+    ungroup()
+
+  models <- df %>%
+    filter(!is.na(load_c_norm), !is.na(Q_c_norm)) %>%
+    group_by(site_OL) %>%
+    nest() %>%
+    mutate(
+      n_samples = map_int(data, nrow),
+      model     = map(data, ~ lm(load_c_norm ~ 0 + Q_c_norm, data = .x)),
+      tidy      = map(model, ~ broom::tidy(.x, conf.int = TRUE)),
+      augmented = map2(model, data, ~ broom::augment(.x, data = .y))
+    ) %>%
+    unnest(tidy) %>%
+    filter(term == "Q_c_norm") %>%
+    transmute(site_OL, n_samples,
+              slope = estimate, std_error = std.error,
+              lwr = conf.low, upr = conf.high,
+              p.value, data, model, augmented)
+
+  list(df = df, models = models)
+}
+
+```
+
+### Inference
+
+```{r, warning=F, echo=T, include=T}
+infer_slopes_vs1 <- function(models_tbl) {
+  models_tbl %>%
+    mutate(
+      t_stat = (slope - 1) / std_error,
+      df = n_samples - 1,
+      p_vs_1 = 2 * pt(abs(t_stat), df, lower.tail = FALSE),
+      interpretation = case_when(
+        slope > 1 & p_vs_1 < 0.05 ~ "Enrichment: load ↑ faster than discharge",
+        slope < 1 & p_vs_1 < 0.05 ~ "Dilution: discharge ↑ faster than load",
+        p_vs_1 >= 0.05 ~ "Proportional: ∝",
+        TRUE ~ "Check data"
+      )
+    ) %>%
+    dplyr::select(site_OL, n_samples, slope, std_error, lwr, upr, p.value, p_vs_1, interpretation)
+}
+```
+
+### Plotting fxn for DMC
+
+```{r, warning=F, echo=T, include=T}
+plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load",
+                     color_var = "tsf") {
+
+  ggplot(df_norm, aes(Q_c_norm, load_c_norm)) +
+    geom_path(alpha = 0.5, linewidth = 1) +
+    geom_abline(data = models_tbl, aes(slope = slope, intercept = 0),
+                linewidth = 1, alpha = 0.8) +
+    geom_point(aes(color = .data[[color_var]]), size = 2.5, alpha = 0.9) +
+    geom_point(
+      data = df_norm %>% filter(storm == "storm"),
+      shape = 21, fill = NA, color = "black", stroke = 1.5, size = 3
+    ) +
+    scale_color_viridis_c(option = "plasma", direction = -1) +
+    facet_wrap(~ site_OL, nrow = 1) +
+    coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+    labs(x = NULL, y = value_label) +
+    theme_bw() +
+    theme(legend.position = "bottom", panel.grid.minor = element_blank())
+}
+
+
+```
+
+### Fxn for DMC residuals (cumulative) 
+
+```{r, warning=F, echo=T, include=T}
+calc_cumul_resid <- function(df_norm, models_tbl) {
+  # Join each site's fitted model back onto its normalized data
+  # models_tbl must contain: site_OL, model (lm)
+  df_norm %>%
+    left_join(models_tbl %>% dplyr::select(site_OL, model), by = "site_OL") %>%
+    group_by(site_OL) %>%
+    arrange(date, .by_group = TRUE) %>%
+    mutate(
+      fit   = predict(model[[1]], newdata = cur_data()),
+      resid = load_c_norm - fit,
+      cumul_resid = cumsum(replace_na(resid, 0))
+    ) %>%
+    ungroup() %>%
+    dplyr::select(-model)
+}
+
+```
+
+
+
+### Breakpoint detection (Davies + segmented) by site
+
+```{r, warning=F, echo=T, include=T}
+detect_breakpoints_site <- function(data, min_n = 10, alpha = 0.05) {
+  # data must include: date, Q_c_norm, load_c_norm
+  # returns a one-row tibble
+
+  if (!requireNamespace("segmented", quietly = TRUE)) {
+    return(tibble::tibble(
+      breakpoint = NA_real_, breakpoint_date = as.Date(NA),
+      slope_1 = NA_real_, slope_2 = NA_real_, delta_slope = NA_real_,
+      davies_p = NA_real_, note = "Package 'segmented' not installed"
+    ))
+  }
+
+  tryCatch({
+    if (nrow(data) < min_n) {
+      return(tibble::tibble(
+        breakpoint = NA_real_, breakpoint_date = as.Date(NA),
+        slope_1 = NA_real_, slope_2 = NA_real_, delta_slope = NA_real_,
+        davies_p = NA_real_, note = "Insufficient data"
+      ))
+    }
+
+    linear_fit <- lm(load_c_norm ~ Q_c_norm, data = data)
+
+    # Davies test for a change in slope
+    dav <- segmented::davies.test(linear_fit, ~ Q_c_norm)
+
+    if (!is.null(dav$p.value) && dav$p.value < alpha) {
+      seg_fit <- segmented::segmented(linear_fit, seg.Z = ~ Q_c_norm, npsi = 1)
+
+      bp_val <- tryCatch(
+        as.numeric(summary(seg_fit)$psi[, "Est."]),
+        error = function(e) NA_real_
+      )
+
+      # date closest to the estimated breakpoint in Q space
+      data_sorted <- data[order(data$Q_c_norm), ]
+      bp_date <- data_sorted$date[which.min(abs(data_sorted$Q_c_norm - bp_val))]
+
+      slopes <- segmented::slope(seg_fit)$Q_c_norm
+
+      tibble::tibble(
+        breakpoint = bp_val,
+        breakpoint_date = bp_date,
+        slope_1 = slopes[1, 1],
+        slope_2 = slopes[2, 1],
+        delta_slope = slopes[2, 1] - slopes[1, 1],
+        davies_p = dav$p.value,
+        note = "Significant breakpoint detected"
+      )
+    } else {
+      tibble::tibble(
+        breakpoint = NA_real_, breakpoint_date = as.Date(NA),
+        slope_1 = unname(coef(linear_fit)[["Q_c_norm"]]),
+        slope_2 = NA_real_, delta_slope = NA_real_,
+        davies_p = dav$p.value,
+        note = "No significant breakpoint"
+      )
+    }
+  }, error = function(e) {
+    tibble::tibble(
+      breakpoint = NA_real_, breakpoint_date = as.Date(NA),
+      slope_1 = NA_real_, slope_2 = NA_real_, delta_slope = NA_real_,
+      davies_p = NA_real_, note = paste("Error:", e$message)
+    )
+  })
+}
+
+breakpoint_analysis_by_site <- function(df_norm, min_n = 10, alpha = 0.05) {
+  df_norm %>%
+    filter(!is.na(load_c_norm), !is.na(Q_c_norm)) %>%
+    group_by(site_OL) %>%
+    tidyr::nest() %>%
+    mutate(breaks = purrr::map(data, detect_breakpoints_site, min_n = min_n, alpha = alpha)) %>%
+    tidyr::unnest_wider(breaks)
+}
+
+
+```
+
+ 
+### Fxn for companion plot (C residuals + breakpoint markers + storms)
+
+```{r, warning=F, echo=T, include=T}
+plot_cumul_resid <- function(resid_df,
+                             bp_tbl = NULL,
+                             start_date = as.Date("2024-10-01"),
+                             site_colors = NULL,
+                             ylab = "Cum. residuals (load ~ Q)",
+                             show_legend = FALSE) {
+
+  plot_df <- resid_df %>% filter(date > start_date)
+
+  if (!is.null(bp_tbl)) {
+    bp_pts <- bp_tbl %>%
+      filter(!is.na(breakpoint_date)) %>%
+      dplyr::select(site_OL, breakpoint_date) %>%
+      distinct() %>%
+      left_join(
+        plot_df %>% dplyr::select(site_OL, date, cumul_resid),
+        by = c("site_OL" = "site_OL", "breakpoint_date" = "date")
+      )
+  } else {
+    bp_pts <- tibble::tibble(
+      site_OL = character(),
+      breakpoint_date = as.Date(character()),
+      cumul_resid = numeric()
+    )
+  }
+
+  p <- ggplot(plot_df, aes(x = date, y = cumul_resid)) +
+    geom_line(aes(color = site_OL), linewidth = 1.1) +
+    geom_point(aes(color = site_OL), size = 3) +
+    geom_point(
+      data = bp_pts %>% filter(breakpoint_date > start_date),
+      aes(x = breakpoint_date, y = cumul_resid, color = site_OL),
+      shape = 23, stroke = 1.5, fill = NA, size = 4
+    ) +
+    { if ("storm" %in% names(plot_df))
+        geom_point(
+          data = plot_df %>% filter(storm == "storm"),
+          aes(x = date, y = cumul_resid),
+          shape = 21, fill = NA, color = "black",
+          stroke = 1.5, size = 3
+        ) } +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    labs(x = NULL, y = ylab) +
+    theme_bw() +
+    scale_x_date(date_breaks = "2 month", date_labels = "%b-%y") +
+    theme(legend.position = if (show_legend) "right" else "none")
+
+  if (!is.null(site_colors)) {
+    p <- p + scale_color_manual(values = site_colors)
+  }
+
+  p
+}
+
+
+
+```
+
+```{r, warning=F, echo=T, include=T}
+
+# 1) Prep once
+davis_flow <- prep_flow(new_df_hydro, flow_start = as.Date("2024-09-30"))
+storm      <- prep_storm_flags(events, test_keys)
+
+# optional: flow summary
+davis_flow %>%
+  group_by(site) %>%
+  summarise(
+    max_Q_c_liters = max(Q_c_liters, na.rm = TRUE),
+    max_ppt_daily_cum = max(ppt_daily_cum, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# 2) Loads for all analytes (one call)
+dmc_long <- prep_chem_loads_long(test_dat%>%filter(site!="davis"), davis_flow, storm, analytes)
+
+# 3) Add tsf once (if ref_date exists in env)
+dmc_long <- dmc_long %>%
+  mutate(tsf = as.integer(difftime(date, ref_date, units = "days")))
+
+```
+
+
+## DOC dynamics 
+
+```{r, warning=F, echo=T, include=T}
+DOC_fit   <- fit_dmc(dmc_long, "DOC")
+models_DOC <- DOC_fit$models
+davis_DOC  <- DOC_fit$df
+
+inference_DOC <- infer_slopes_vs1(models_DOC)
+inference_DOC
+```
+
+
+
+```{r,  fig.width=9, fig.height=5, out.width="90%"}
+
+DMC_DOC_plot <- plot_dmc(davis_DOC, models_DOC, value_label = "DOC load")
+DMC_DOC_plot
+```
+
+```{r}
+DOC_resid <- calc_cumul_resid(DOC_fit$df, DOC_fit$models)
+bp_DOC <- breakpoint_analysis_by_site(DOC_fit$df)
+bp_DOC
+```
+
+```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+
+DMCres_DOC_plot <- plot_cumul_resid(
+  resid_df   = DOC_resid,
+  bp_tbl     = bp_DOC,
+  site_colors = site_colors_OL,
+  ylab = "C residuals DOC ~ Q"
+)
+
+DMCres_DOC_plot
+```
+
+
+
+## TDN dynamics 
+
+```{r}
+TDN_fit   <- fit_dmc(dmc_long, "TDN")
+models_TDN <- TDN_fit$models
+davis_TDN  <- TDN_fit$df
+
+inference_TDN <- infer_slopes_vs1(models_TDN)
+inference_TDN
+```
+
+
+```{r,  fig.width=9, fig.height=5, out.width="90%"}
+
+DMC_TDN_plot <- plot_dmc(davis_TDN, models_TDN, value_label = "TDN load")
+DMC_TDN_plot
+```
+
+```{r}
+TDN_resid <- calc_cumul_resid(TDN_fit$df, TDN_fit$models)
+bp_TDN <- breakpoint_analysis_by_site(TDN_fit$df)
+bp_TDN
+```
+
+```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+
+DMCres_TDN_plot <- plot_cumul_resid(
+  resid_df   = TDN_resid,
+  bp_tbl     = bp_TDN,
+  site_colors = site_colors_OL,
+  ylab = "C residuals TDN ~ Q"
+)
+
+DMCres_TDN_plot
+```
+
+
+### PO4 dynamics 
+
+```{r}
+PO4_fit   <- fit_dmc(dmc_long, "PO4_P")
+models_PO4 <- PO4_fit$models
+davis_PO4  <- PO4_fit$df
+
+inference_PO4 <- infer_slopes_vs1(models_PO4)
+inference_PO4
+```
+
+```{r,  fig.width=9, fig.height=5, out.width="90%"}
+
+DMC_PO4_plot <- plot_dmc(davis_PO4, models_PO4, value_label = "PO4 load")
+DMC_PO4_plot
+```
+
+```{r}
+PO4_resid <- calc_cumul_resid(PO4_fit$df, PO4_fit$models)
+bp_PO4 <- breakpoint_analysis_by_site(PO4_fit$df)
+bp_PO4
+```
+
+```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+
+DMCres_PO4_plot <- plot_cumul_resid(
+  resid_df   = PO4_resid,
+  bp_tbl     = bp_PO4,
+  site_colors = site_colors_OL,
+  ylab = "C residuals PO4 ~ Q"
+)
+
+DMCres_PO4_plot
+```
+
+
+
+
+### Al dynamics 
+
+```{r}
+Al_fit   <- fit_dmc(dmc_long, "Al")
+models_Al <- Al_fit$models
+davis_Al  <- Al_fit$df
+
+inference_Al <- infer_slopes_vs1(models_Al)
+inference_Al
+```
+
+```{r,  fig.width=9, fig.height=5, out.width="90%"}
+
+DMC_Al_plot <- plot_dmc(davis_Al, models_Al, value_label = "Al load")
+DMC_Al_plot
+```
+
+```{r}
+Al_resid <- calc_cumul_resid(Al_fit$df, Al_fit$models)
+bp_Al <- breakpoint_analysis_by_site(Al_fit$df)
+bp_Al
+```
+
+```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+
+DMCres_Al_plot <- plot_cumul_resid(
+  resid_df   = Al_resid,
+  bp_tbl     = bp_Al,
+  site_colors = site_colors_OL,
+  ylab = "C residuals Al ~ Q"
+)
+
+DMCres_Al_plot
+```
+
+
+
+### As dynamics 
+
+```{r}
+As_fit   <- fit_dmc(dmc_long, "As")
+models_As <- As_fit$models
+davis_As  <- As_fit$df
+
+inference_As <- infer_slopes_vs1(models_As)
+inference_As
+```
+
+```{r,  fig.width=9, fig.height=5, out.width="90%"}
+
+DMC_As_plot <- plot_dmc(davis_As, models_As, value_label = "As load")
+DMC_As_plot
+```
+
+```{r}
+As_resid <- calc_cumul_resid(As_fit$df, As_fit$models)
+bp_As <- breakpoint_analysis_by_site(As_fit$df)
+bp_As
+```
+
+```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+
+DMCres_As_plot <- plot_cumul_resid(
+  resid_df   = As_resid,
+  bp_tbl     = bp_As,
+  site_colors = site_colors_OL,
+  ylab = "C residuals As ~ Q"
+)
+
+DMCres_As_plot
+```
+
+###
+
+
+### B dynamics 
+
+```{r}
+B_fit   <- fit_dmc(dmc_long, "B")
+models_B <- B_fit$models
+davis_B  <- B_fit$df
+
+inference_B <- infer_slopes_vs1(models_B)
+inference_B
+```
+
+```{r,  fig.width=9, fig.height=5, out.width="90%"}
+
+DMC_B_plot <- plot_dmc(davis_B, models_B, value_label = "B load")
+DMC_B_plot
+```
+
+```{r}
+B_resid <- calc_cumul_resid(B_fit$df, B_fit$models)
+bp_B <- breakpoint_analysis_by_site(B_fit$df)
+bp_B
+```
+
+```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+
+DMBes_B_plot <- plot_cumul_resid(
+  resid_df   = B_resid,
+  bp_tbl     = bp_B,
+  site_colors = site_colors_OL,
+  ylab = "C residuals B ~ Q"
+)
+
+DMBes_B_plot
+```
+
+
+
+
+
+### Ba dynamics 
+
+```{r}
+Ba_fit   <- fit_dmc(dmc_long, "Ba")
+models_Ba <- Ba_fit$models
+davis_Ba  <- Ba_fit$df
+
+inference_Ba <- infer_slopes_vs1(models_Ba)
+inference_Ba
+```
+
+```{r,  fig.width=9, fig.height=5, out.width="90%"}
+
+DMC_Ba_plot <- plot_dmc(davis_Ba, models_Ba, value_label = "Ba load")
+DMC_Ba_plot
+```
+
+```{r}
+Ba_resid <- calc_cumul_resid(Ba_fit$df, Ba_fit$models)
+bp_Ba <- breakpoint_analysis_by_site(Ba_fit$df)
+bp_Ba
+```
+
+```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+
+DMCres_Ba_plot <- plot_cumul_resid(
+  resid_df   = Ba_resid,
+  bp_tbl     = bp_Ba,
+  site_colors = site_colors_OL,
+  ylab = "C residuals Ba ~ Q"
+)
+
+DMCres_Ba_plot
+```
+
+
+
+
+
+### Ca dynamics 
+
+```{r}
+Ca_fit   <- fit_dmc(dmc_long, "Ca")
+models_Ca <- Ca_fit$models
+davis_Ca  <- Ca_fit$df
+
+inference_Ca <- infer_slopes_vs1(models_Ca)
+inference_Ca
+```
+
+```{r,  fig.width=9, fig.height=5, out.width="90%"}
+
+DMC_Ca_plot <- plot_dmc(davis_Ca, models_Ca, value_label = "Ca load")
+DMC_Ca_plot
+```
+
+```{r}
+Ca_resid <- calc_cumul_resid(Ca_fit$df, Ca_fit$models)
+bp_Ca <- breakpoint_analysis_by_site(Ca_fit$df)
+bp_Ca
+```
+
+```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+
+DMCres_Ca_plot <- plot_cumul_resid(
+  resid_df   = Ca_resid,
+  bp_tbl     = bp_Ca,
+  site_colors = site_colors_OL,
+  ylab = "C residuals Ca ~ Q"
+)
+
+DMCres_Ca_plot
+```
+
+
+
+
+### Cr dynamics 
+
+```{r}
+Cr_fit   <- fit_dmc(dmc_long, "Cr")
+models_Cr <- Cr_fit$models
+davis_Cr  <- Cr_fit$df
+
+inference_Cr <- infer_slopes_vs1(models_Cr)
+inference_Cr
+```
+
+```{r,  fig.width=9, fig.height=5, out.width="90%"}
+
+DMC_Cr_plot <- plot_dmc(davis_Cr, models_Cr, value_label = "Cr load")
+DMC_Cr_plot
+```
+
+```{r}
+Cr_resid <- calc_cumul_resid(Cr_fit$df, Cr_fit$models)
+bp_Cr <- breakpoint_analysis_by_site(Cr_fit$df)
+bp_Cr
+```
+
+```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+
+DMCres_Cr_plot <- plot_cumul_resid(
+  resid_df   = Cr_resid,
+  bp_tbl     = bp_Cr,
+  site_colors = site_colors_OL,
+  ylab = "C residuals Cr ~ Q"
+)
+
+DMCres_Cr_plot
+```
+
+
+
+### Fe dynamics 
+
+```{r}
+Fe_fit   <- fit_dmc(dmc_long, "Fe")
+models_Fe <- Fe_fit$models
+davis_Fe  <- Fe_fit$df
+
+inference_Fe <- infer_slopes_vs1(models_Fe)
+inference_Fe
+```
+
+```{r,  fig.width=9, fig.height=5, out.width="90%"}
+DMC_Fe_plot <- plot_dmc(davis_Fe, models_Fe, value_label = "Fe load")
+DMC_Fe_plot
+```
+
+```{r}
+Fe_resid <- calc_cumul_resid(Fe_fit$df, Fe_fit$models)
+bp_Fe <- breakpoint_analysis_by_site(Fe_fit$df)
+bp_Fe
+```
+
+
+```{r, fig.width=7, fig.height=2.25, out.width="85%"}
+
+DMCres_Fe_plot <- plot_cumul_resid(
+  resid_df   = Fe_resid,
+  bp_tbl     = bp_Fe,
+  site_colors = site_colors_OL,
+  ylab = "C residuals Fe ~ Q"
+)
+
+DMCres_Fe_plot
+```
+
+### Mn dynamics 
+
+```{r}
+Mn_fit   <- fit_dmc(dmc_long, "Mn")
+models_Mn <- Mn_fit$models
+davis_Mn  <- Mn_fit$df
+
+inference_Mn <- infer_slopes_vs1(models_Mn)
+inference_Mn
+```
+
+```{r,  fig.width=9, fig.height=5, out.width="90%"}
+
+DMC_Mn_plot <- plot_dmc(davis_Mn, models_Mn, value_label = "Mn load")
+DMC_Mn_plot
+```
+
+```{r}
+Mn_resid <- calc_cumul_resid(Mn_fit$df, Mn_fit$models)
+bp_Mn <- breakpoint_analysis_by_site(Mn_fit$df)
+bp_Mn
+```
+
+```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+
+DMCres_Mn_plot <- plot_cumul_resid(
+  resid_df   = Mn_resid,
+  bp_tbl     = bp_Mn,
+  site_colors = site_colors_OL,
+  ylab = "C residuals Mn ~ Q"
+)
+
+DMCres_Mn_plot
+```
+
+
+
+### Pb dynamics 
+
+```{r}
+Pb_fit   <- fit_dmc(dmc_long, "Pb")
+models_Pb <- Pb_fit$models
+davis_Pb  <- Pb_fit$df
+
+inference_Pb <- infer_slopes_vs1(models_Pb)
+inference_Pb
+```
+
+```{r,  fig.width=9, fig.height=5, out.width="90%"}
+
+DMC_Pb_plot <- plot_dmc(davis_Pb, models_Pb, value_label = "Pb load")
+DMC_Pb_plot
+```
+
+```{r}
+Pb_resid <- calc_cumul_resid(Pb_fit$df, Pb_fit$models)
+bp_Pb <- breakpoint_analysis_by_site(Pb_fit$df)
+bp_Pb
+```
+
+```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+
+DMCres_Pb_plot <- plot_cumul_resid(
+  resid_df   = Pb_resid,
+  bp_tbl     = bp_Pb,
+  site_colors = site_colors_OL,
+  ylab = "C residuals Pb ~ Q"
+)
+
+DMCres_Pb_plot
+```
+
+
+
+
+### Sr dynamics 
+
+```{r}
+Sr_fit   <- fit_dmc(dmc_long, "Sr")
+models_Sr <- Sr_fit$models
+davis_Sr  <- Sr_fit$df
+
+inference_Sr <- infer_slopes_vs1(models_Sr)
+inference_Sr
+```
+
+```{r,  fig.width=9, fig.height=5, out.width="90%"}
+
+DMC_Sr_plot <- plot_dmc(davis_Sr, models_Sr, value_label = "Sr load")
+DMC_Sr_plot
+```
+
+```{r}
+Sr_resid <- calc_cumul_resid(Sr_fit$df, Sr_fit$models)
+bp_Sr <- breakpoint_analysis_by_site(Sr_fit$df)
+bp_Sr
+```
+
+```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+
+DMSres_Sr_plot <- plot_cumul_resid(
+  resid_df   = Sr_resid,
+  bp_tbl     = bp_Sr,
+  site_colors = site_colors_OL,
+  ylab = "C residuals Sr ~ Q"
+)
+
+DMSres_Sr_plot
+```
+
+
+
+
+### B dynamics 
+
+```{r}
+B_fit   <- fit_dmc(dmc_long, "B")
+models_B <- B_fit$models
+davis_B  <- B_fit$df
+
+inference_B <- infer_slopes_vs1(models_B)
+inference_B
+```
+
+```{r,  fig.width=9, fig.height=5, out.width="90%"}
+
+DMC_B_plot <- plot_dmc(davis_B, models_B, value_label = "B load")
+DMC_B_plot
+```
+
+```{r}
+B_resid <- calc_cumul_resid(B_fit$df, B_fit$models)
+bp_B <- breakpoint_analysis_by_site(B_fit$df)
+bp_B
+```
+
+```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+
+DMBes_B_plot <- plot_cumul_resid(
+  resid_df   = B_resid,
+  bp_tbl     = bp_B,
+  site_colors = site_colors_OL,
+  ylab = "C residuals B ~ Q"
+)
+
+DMBes_B_plot
+```
+
+
+
+### Zn dynamics 
+
+```{r}
+
+Zn_fit   <- fit_dmc(dmc_long, "Zn")
+models_Zn <- Zn_fit$models
+davis_Zn  <- Zn_fit$df
+
+inZnrence_Zn <- infer_slopes_vs1(models_Zn)
+inZnrence_Zn
+```
+
+```{r,  fig.width=9, fig.height=5, out.width="90%"}
+DMC_Zn_plot <- plot_dmc(davis_Zn, models_Zn, value_label = "Zn load")
+DMC_Zn_plot
+```
+
+```{r}
+Zn_resid <- calc_cumul_resid(Zn_fit$df, Zn_fit$models)
+bp_Zn <- breakpoint_analysis_by_site(Zn_fit$df)
+bp_Zn
+```
+
+
+```{r, fig.width=7, fig.height=2.25, out.width="85%"}
+
+DMCres_Zn_plot <- plot_cumul_resid(
+  resid_df   = Zn_resid,
+  bp_tbl     = bp_Zn,
+  site_colors = site_colors_OL,
+  ylab = "C residuals Zn ~ Q"
+)
+
+DMCres_Zn_plot
+```
+
+
+#### Draft Figure 3
+
+```{r,  fig.width=8, fig.height=6, out.width="85%", echo=F}
+
+DMC_grid_nuts <- ggarrange( 
+  DMC_DOC_plot,
+  DMC_TDN_plot,
+  DMC_PO4_plot,
+  common.legend = T,
+  ncol=1,
+  nrow=3)
+
+DMC_grid_nuts
+```
+
+```{r, echo=FALSE, include =F}
+
+# ggsave(plot = DMC_grid_nuts, filename = paste("./Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_nuts_grid_plot.png",sep=""),width=14,height=8,dpi=300)
+
+```
+
+#### Draft Figure 4
+
+```{r,  fig.width=8, fig.height=6, out.width="85%", echo=FALSE}
+DMC_res_grid_nuts <- ggarrange( 
+  DMCres_DOC_plot,
+  DMCres_TDN_plot,
+  DMCres_PO4_plot,
+  common.legend = T,
+  ncol=1,
+  nrow=3)
+
+DMC_res_grid_nuts
+```
+
+```{r, echo=FALSE, include =F}
+
+# ggsave(plot = DMC_res_grid_nuts, filename = paste("./Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_res_nuts_grid_plot.png",sep=""),width=6,height=8,dpi=300)
+
+```
+
+
+#### Draft Figure 5
+
+```{r,  fig.width=11, fig.height=25, out.width="95%", echo=FALSE}
+
+DMC_grid_metals <- 
+  ggarrange( 
+  #DMC_Al_plot,
+  DMC_As_plot,
+  DMC_B_plot,
+  DMC_Ba_plot,
+  DMC_Ca_plot,
+  DMC_Cr_plot, 
+  #DMC_Fe_plot,
+  #DMC_Mn_plot,
+  DMC_Pb_plot,
+  DMC_Sr_plot,
+  DMC_Zn_plot,
+  common.legend = T,
+  ncol=1,
+  nrow=8)
+
+DMC_grid_metals
+
+```
+
+
+
+```{r, echo=FALSE, include =F}
+
+# ggsave(plot = DMC_grid_metals, filename = paste("./Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_metals_grid_plot_SI.png",sep=""),width=14,height=20,dpi=300)
+
+```
+
+
+#### Draft Figure 6
+
+```{r,  fig.width=7, fig.height=16, out.width="85%", echo=FALSE}
+
+DMCres_grid_metals <- 
+  ggarrange( 
+  #DMC_Al_plot,
+  DMCres_As_plot,
+  DMBes_B_plot,
+  DMCres_Ba_plot,
+  DMCres_Ca_plot,
+  DMCres_Cr_plot, 
+  #DMCres_Fe_plot,
+  #DMCres_Mn_plot,
+  DMCres_Pb_plot,
+  DMSres_Sr_plot,
+  DMCres_Zn_plot,
+  common.legend = T,
+  ncol=1,
+  nrow=8)
+
+DMCres_grid_metals
+```
+
+
+```{r, echo=FALSE, include =F}
+# ggsave(plot = DMCres_grid_metals, filename = paste("./Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_res_metals_grid_plot_SI.png",sep=""),width=6,height=20,dpi=300)
+
+```
+
+## ERDC Davis Fire MS basin differences in water quality
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+# Read in TSS data
+
+library(dplyr)
+library(readr)   # parse_number()
+
+tss_dat <- read_csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/TSS_data.csv")
+
+tss_dat2 <- tss_dat %>%
+  mutate(
+    date = as.Date(Collection_date, format = "%m/%d/%y"),
+    TSS_mgL = parse_number(as.character(TSS_mgL))
+  ) %>%
+  dplyr::select(site, date, TSS_mgL)
+
+# Average TSS_mgL for each site-date (prevents join duplicates)
+tss_mean <- tss_dat2 %>%
+  group_by(site, date) %>%
+  summarise(TSS_mgL = mean(TSS_mgL, na.rm = TRUE), .groups = "drop") %>%
+  mutate(TSS_mgL = ifelse(is.nan(TSS_mgL), NA_real_, TSS_mgL))  # all-NA groups -> NA
+
+merged_df <- test_dat %>%
+  left_join(tss_mean, by = c("site", "date")) %>%
+  mutate(
+    TSS = as.numeric(TSS),              # ensure numeric
+    TSS = coalesce(TSS, TSS_mgL)        # fill missing TSS from averaged TSS_mgL
+  ) %>%
+  dplyr::select(-TSS_mgL)
+
+```
+
+### ============================================================================
+
+## III.  Hydroclimate differences between basins 
+
+### ============================================================================
+
+- Flashiness
+
+- Total PPT
+
+- Total water yield 
+
+```{r}
+hydro_sum <- davis_flow %>%
+  group_by(site) %>%
+  summarise(
+    ppt_max = round(max(ppt..mm., na.rm = T),1),
+    ppt_cum_max = round(max(ppt_daily_cum, na.rm = T),1),
+    flow_max = round(max(flow_filled, na.rm = T),3), 
+    water_yield = max(Q_c_liters, na.rm =T))
+
+hydro_sum
+```
+### ============================================================================
+
+## IV.  MS basin differences in water quality
+
+### ============================================================================
+
+## 2. Basin water quality differences 
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+# Chem data
+
+test_dat
+
+ref_date <- as.Date("2024-09-25")
+
+
+df_WQ_plot <- merged_df %>%
+  mutate(burn_area = case_when(
+    site== "ophir" ~ 0,
+    site== "davis" ~ 10,
+    site == "winters_usgs" ~ 65,
+    site == "winters_up" ~ 62,
+    site == "browns" ~ 42, 
+    site == "browns_sub" ~ 41)) %>%
+  mutate(
+    site_lab = fct_reorder(site, burn_area, .fun = min, .desc = FALSE)
+  )%>%
+  mutate(
+    tsf = as.integer(difftime(datetime, ref_date, units = "days"))
+  ) 
+
+```
+
+
+```{r}
+
+library(dplyr)
+library(ggplot2)
+library(forcats)
+library(rlang)
+
+wq_boxplot <- function(data, y, y_lab,
+                       x = burn_area,
+                       site = site_lab,
+                       fill = site_lab,
+                       color = tsf,
+                       hline = NULL,
+                       filter_expr = NULL,
+                       jitter_width = 0.1,
+                       point_shape = 19,
+                       viridis_option = "plasma",
+                       viridis_direction = -1,
+                       site_colors = NULL,
+                       add_anova = TRUE,
+                       anova_label_digits = 2,
+                       anova_by_x = FALSE,
+                       dodge_width = 0.75) {
+  
+  yq <- enquo(y); xq <- enquo(x); siteq <- enquo(site); fillq <- enquo(fill); colorq <- enquo(color)
+  
+  # names as strings (for base-model formulas)
+  y_name    <- as_name(yq)
+  x_name    <- as_name(xq)
+  site_name <- as_name(siteq)
+  
+  pdat <- data
+  if (!is.null(filter_expr)) pdat <- pdat %>% filter(!!enquo(filter_expr))
+  
+  # helper: p formatting - MODIFIED for 2 sig figs
+  fmt_p <- function(p) {
+    if (is.na(p)) return("p = NA")
+    if (p < 0.001) return("p < 0.001")  # Changed: return statement for clarity
+    if (p >= 0.001) return(paste0("p = ", signif(p, 2)))  # Changed: 2 sig figs instead of 3
+  }
+  
+  make_anova_text <- function(dat) {
+    dat <- dat %>%
+      filter(!is.na(.data[[y_name]]), !is.na(.data[[site_name]])) %>%
+      mutate(.y_num = as.numeric(.data[[y_name]]),
+             .site  = as.factor(.data[[site_name]]))
+    
+    if (nrow(dat) < 3 || dplyr::n_distinct(dat$.site) < 2) return(NULL)
+    
+    fit <- aov(reformulate(".site", response = ".y_num"), data = dat)
+    sm  <- summary(fit)[[1]]
+    
+    Fv  <- sm[["F value"]][1]
+    df1 <- sm[["Df"]][1]
+    df2 <- sm[["Df"]][2]
+    pv  <- sm[["Pr(>F)"]][1]
+    
+    # CHANGE 2: Only return text if p < 0.09
+    if (!is.na(pv) && pv >= 0.09) return(NULL)
+    
+    # CHANGE 1: Use "reach" instead of site_name
+    paste0(
+      "ANOVA (reach)\n",
+      "F(", df1, ", ", df2, ") = ", round(Fv, anova_label_digits), "\n",
+      fmt_p(pv)
+    )
+  }
+  
+  # compute label text
+  anova_text <- NULL
+  if (add_anova) {
+    if (!anova_by_x) {
+      anova_text <- make_anova_text(pdat)
+    } else {
+      res <- pdat %>%
+        group_by(!!xq) %>%
+        group_modify(~{
+          txt <- make_anova_text(.x)
+          
+          # pull p to choose smallest p
+          .x2 <- .x %>%
+            filter(!is.na(.data[[y_name]]), !is.na(.data[[site_name]])) %>%
+            mutate(.y_num = as.numeric(.data[[y_name]]),
+                   .site  = as.factor(.data[[site_name]]))
+          
+          if (nrow(.x2) < 3 || dplyr::n_distinct(.x2$.site) < 2) {
+            tibble(p = NA_real_, label = txt)
+          } else {
+            fit <- aov(reformulate(".site", response = ".y_num"), data = .x2)
+            pv <- summary(fit)[[1]][["Pr(>F)"]][1]
+            
+            # CHANGE 2: Set label to NULL if p >= 0.09
+            if (!is.na(pv) && pv >= 0.09) {
+              tibble(p = pv, label = as.character(NA))
+            } else {
+              tibble(p = pv, label = txt)
+            }
+          }
+        }) %>%
+        ungroup()
+      
+      # choose smallest p (strongest evidence)
+      if (all(is.na(res$p)) || all(is.na(res$label))) {
+        anova_text <- NULL
+      } else {
+        # Filter out NA labels before selecting minimum p
+        valid_res <- res %>% filter(!is.na(label))
+        if (nrow(valid_res) > 0) {
+          anova_text <- valid_res$label[which.min(valid_res$p)]
+        } else {
+          anova_text <- NULL
+        }
+      }
+    }
+  }
+  
+  # ---- Plot ----
+  dodge <- position_dodge(width = dodge_width)
+  
+  p <- ggplot(pdat, aes(x = factor(!!xq), y = !!yq)) +
+    geom_boxplot(
+      aes(fill = !!fillq, group = interaction(!!xq, !!fillq)),
+      alpha = 0.95,
+      position = dodge
+    ) +
+    geom_point(
+      aes(color = !!colorq),
+      alpha = 0.8, size = 1,
+      position = position_jitterdodge(jitter.width = jitter_width, dodge.width = dodge_width),
+      shape = point_shape
+    ) +
+    scale_color_viridis_c(option = viridis_option, direction = viridis_direction) +
+    labs(y = y_lab, x = "Burn %", color = "Days since fire", fill= "Reach") +
+    guides(shape = "none") +
+    theme_minimal()
+  
+  if (!is.null(site_colors)) p <- p + scale_fill_manual(values = site_colors)
+  if (!is.null(hline)) p <- p + geom_hline(yintercept = hline, linetype = "dashed")
+  
+  if (!is.null(anova_text)) {
+    p <- p + annotate(
+      "text",
+      x = Inf, y = Inf,
+      label = anova_text,
+      hjust = 1.05, vjust = 1.1,
+      size = 3
+    )
+  }
+  
+  p
+}
+
+
+```
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+
+DOC_plot <- wq_boxplot(df_WQ_plot, DOC_QC, expression(DOC~(mg~L^-1)), hline = 0.1, site_colors = site_colors)
+
+TDN_plot <- wq_boxplot(df_WQ_plot, TDN_QC, expression(TDN~(mg~L^-1)), hline = 0.02, site_colors = site_colors)
+
+PO4_plot <- wq_boxplot(df_WQ_plot, PO4.P_QC, expression(PO[4]~(mg~L^-1)), hline = 0.01, site_colors = site_colors)
+
+
+TSS_plot <- wq_boxplot(df_WQ_plot, TSS, expression(TSS~(mg~L^-1)), site_colors = site_colors)
+
+```
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+
+EC_plot  <- wq_boxplot(df_WQ_plot, EC, expression(SPC~(mu*S~cm^-1)),  site_colors = site_colors)
+
+temp_plot  <- wq_boxplot(df_WQ_plot, temp, expression(Temp.~(degree*C)),  site_colors = site_colors)
+
+pH_plot  <- wq_boxplot(df_WQ_plot, pH, "pH",  site_colors = site_colors)
+
+DO_plot  <- wq_boxplot(df_WQ_plot, DO, "DO sat. (%)",  site_colors = site_colors)
+
+
+##
+Al_plot  <- wq_boxplot(df_WQ_plot, Al_QC, expression(Al~(mu*g~L^-1)),  hline = 1,  site_colors = site_colors)
+
+As_plot  <- wq_boxplot(df_WQ_plot, As_QC, expression(As~(mu*g~L^-1)),  hline = 0.1,  site_colors = site_colors)
+
+B_plot  <- wq_boxplot(df_WQ_plot, B_QC, expression(B~(mu*g~L^-1)),  hline = 1,  site_colors = site_colors)
+
+Ba_plot  <- wq_boxplot(df_WQ_plot, Ba_QC, expression(Ba~(mu*g~L^-1)),  hline = 1,  site_colors = site_colors)
+
+Ca_plot  <- wq_boxplot(df_WQ_plot, Ca_QC, expression(Ca~(mu*g~L^-1)),  hline = 10,  site_colors = site_colors)
+
+Cr_plot  <- wq_boxplot(df_WQ_plot, Cr_QC, expression(Cr~(mu*g~L^-1)),  hline = 0.1,  site_colors = site_colors)
+
+Fe_plot  <- wq_boxplot(df_WQ_plot, Fe_QC, expression(Fe~(mu*g~L^-1)),  hline = 1,  site_colors = site_colors)
+
+Mn_plot  <- wq_boxplot(df_WQ_plot, Mn_QC, expression(Mn~(mu*g~L^-1)),  hline = 0.1,  site_colors = site_colors)
+
+Pb_plot  <- wq_boxplot(df_WQ_plot, Pb_QC, expression(Pb~(mu*g~L^-1)),  hline = 0.1,  site_colors = site_colors)
+
+Sr_plot  <- wq_boxplot(df_WQ_plot, Sr_QC, expression(Sr~(mu*g~L^-1)),  hline = 0.1,  site_colors = site_colors)
+
+B_QC_plot  <- wq_boxplot(df_WQ_plot, B_QC, expression(B~(mu*g~L^-1)),  hline = 1,  site_colors = site_colors)
+
+SrB_QC_plot  <- wq_boxplot(df_WQ_plot, Sr_B_QC, expression(Sr:B~(mu*g~L^-1)),  hline = 1,  site_colors = site_colors)
+
+```
+
+
+#### Draft boxplot nutrients
+
+```{r,  fig.width=6, fig.height=4, out.width="85%", echo=F}
+
+DMC_grid_nuts <- ggarrange( 
+  TSS_plot,
+  DOC_plot,
+  TDN_plot,
+  PO4_plot,
+  common.legend = T,
+  ncol=4,
+  nrow=1)
+
+DMC_grid_nuts
+```
+
+```{r, echo=FALSE, include =F}
+# ggsave(plot = DMC_grid_nuts, filename = paste("./Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/Nuts_load_grid_plot.png",sep=""),width=8.4,height=4,dpi=300)
+
+```
+
+#### Draft boxplot metals
+
+```{r,  fig.width=7, fig.height=6, out.width="85%", echo=F}
+
+DMC_grid_metals <- ggarrange( 
+  Al_plot,
+  As_plot,
+  B_plot,
+  Ba_plot,
+  Ca_plot,
+  Cr_plot,
+  Fe_plot,
+  Mn_plot,
+  Pb_plot,
+  Sr_plot,
+  B_QC_plot,
+  SrB_QC_plot,
+
+  common.legend = T,
+  ncol=4,
+  nrow=3)
+
+DMC_grid_metals
+
+```
+
+
+```{r, echo=FALSE, include =F}
+# ggsave(plot = DMC_grid_metals, filename = paste("./Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/metals_load_grid_plot_SI.png",sep=""),width=8.6,height=8.6,dpi=300)
+
+```
+
+
+#### Draft boxplot metals
+
+```{r,  fig.width=6, fig.height=3, out.width="85%", echo=F}
+
+DMC_grid_WQ <- ggarrange(
+  EC_plot,
+  temp_plot,
+  DO_plot,
+  pH_plot,
+  common.legend = T,
+  ncol=4,
+  nrow=1)
+
+DMC_grid_WQ
+```
+
+
+```{r, echo=FALSE, include =F}
+# ggsave(plot = DMC_grid_WQ, filename = paste("./Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/WQ_load_grid_plot.png",sep=""),width=8.4,height=4,dpi=300)
+
+```
+
+#### Davis creek 
+
+```{r, echo=FALSE, include =T}
+burn_davis <- df_WQ_plot%>%filter(site=="davis")
+summary(burn_davis)
+```
+
+#### Ophir creek 
+
+```{r, echo=FALSE, include =T}
+burn_ophir <- df_WQ_plot%>%filter(site=="ophir")
+summary(burn_ophir)
+```
+
+#### Browns creek 
+
+```{r, echo=FALSE, include =T}
+burn_browns <- df_WQ_plot%>%filter(site=="browns")
+summary(burn_browns)
+```
+
+#### Browns Sub creek 
+
+```{r, echo=FALSE, include =T}
+burn_brownsS <- df_WQ_plot%>%filter(site=="browns_sub")
+summary(burn_brownsS)
+```
+
+#### Winters USGS creek 
+
+```{r, echo=FALSE, include =T}
+burn_wintersUSGS <- df_WQ_plot%>%filter(site=="winters_usgs")
+summary(burn_wintersUSGS)
+```
+
+#### Winters Up creek 
+
+```{r, echo=FALSE, include =T}
+burn_wintersUP <- df_WQ_plot%>%filter(site=="winters_up")
+summary(burn_wintersUP)
+```
+
+End of script. 
