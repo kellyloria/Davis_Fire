@@ -4,5 +4,5 @@ Analysis for MS : Variation in Seasonal Hydrologic Connectivity Regulates Post-F
 
 ## Workflow
 - Cleaning scripts for chemistry, biomass, canopy cover and YSI data: https://github.com/kellyloria/Davis_Fire/tree/main/Data_cleaning_scripts
-- Data for concetration - discharge dynamics with in reach location:
-- Statistical analyses - 
+- Data for concetration - discharge dynamics with in reach location:https://github.com/kellyloria/Davis_Fire/blob/main/ERDC_MS_figures.md
+- Statistical analyses - https://github.com/kellyloria/Davis_Fire/blob/main/ERDC_MS_solute_stats_REFACTORED.Rmd
