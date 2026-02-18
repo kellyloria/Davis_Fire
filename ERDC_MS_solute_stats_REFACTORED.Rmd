@@ -1,0 +1,1722 @@
+---
+title: "ERDC Davis Solute Stats"
+subtitle: "Linear models for flow, ppt, tsm and solute concentrations" 
+author: "Kelly Loria"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: united
+    highlight: tango
+    toc: true
+    toc_float: true
+    code_folding: hide
+    self_contained: true
+  pdf_document: 
+    toc: true
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{=html}
+<style type="text/css">
+body, td {font-size: 12px;}
+code.r{font-size: 8px;}
+pre {font-size: 10px}
+</style>
+```
+
+```{r setup, include=FALSE}
+# Global chunk options
+knitr::opts_chunk$set(
+  echo = FALSE,           # Hide code by default
+  warning = FALSE,
+  message = FALSE,
+  cache = TRUE,           # Enable caching for all chunks
+  cache.path = "_cache/", # Organized cache directory
+  fig.path = "figures/",  # Save figures to dedicated folder
+  fig.width = 7,
+  fig.height = 3,
+  fig.retina = 2,
+  out.width = "80%"
+)
+
+# Font size hook (kept from original)
+def.chunk.hook <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", 
+         paste0("\n \\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+
+# Set parallel processing options for brms
+options(mc.cores = parallel::detectCores() - 1)  # Leave one core free
+```
+
+```{r packages, include=FALSE}
+# Load all required packages once
+# Core data manipulation
+library(tidyverse)
+library(lubridate)
+library(here)  # For portable file paths
+
+# Statistical modeling
+library(lme4)
+library(lmerTest)
+library(brms)
+library(MuMIn)
+library(PerformanceAnalytics)
+
+# Data import
+library(readxl)
+library(dataRetrieval)
+
+# Visualization
+library(viridis)
+library(cowplot)
+library(ggpubr)
+library(ggpmisc)
+
+# Tables
+library(knitr)
+library(kableExtra)
+
+# Utilities
+library(zoo)
+library(slider)
+library(broom)
+```
+
+```{r site_colors, include=FALSE}
+# Define color schemes
+site_colors <- c(
+  "ophir" = "#7d5ba6",
+  "winters_usgs" = "#4287f5",
+  "winters_up" = "#7fc5f0",
+  "davis" = "#d9cb7c",
+  "browns" = "#c94d00", 
+  "browns_sub" = "#bd772d"
+)
+
+site_colors_OL <- c(
+  "A_ophir" = "#7d5ba6",
+  "F_winters_usgs" = "#4287f5",
+  "E_winters_up" = "#7fc5f0",
+  "B_davis" = "#d9cb7c",
+  "D_browns" = "#c94d00",
+  "C_browns_sub" = "#bd772d"
+)
+
+ref_date <- as.Date("2024-09-25")
+```
+
+```{r functions, include=FALSE}
+# Water year function
+water_year <- function(data) {
+  data %>%
+    mutate(date = ymd(date)) %>%
+    mutate(WaterYear = if_else(month(date) >= 10, year(date) + 1, year(date)))
+}
+
+# Function to fit or load Bayesian models
+fit_or_load_brm <- function(model_name, formula, data, family, prior, 
+                            chains = 3, cores = 3, iter = 4000, 
+                            warmup = 2000, refit = FALSE) {
+  
+  # Create models directory if it doesn't exist
+  model_dir <- here("models")
+  if (!dir.exists(model_dir)) {
+    dir.create(model_dir, recursive = TRUE)
+  }
+  
+  model_file <- here("models", paste0(model_name, ".rds"))
+  
+  if (file.exists(model_file) && !refit) {
+    message("Loading cached model: ", model_name)
+    return(readRDS(model_file))
+  }
+  
+  message("Fitting model: ", model_name, " (this may take 10-20 minutes)")
+  
+  m <- brm(
+    formula, 
+    data = data, 
+    family = family, 
+    prior = prior,
+    chains = chains, 
+    cores = cores, 
+    iter = iter, 
+    warmup = warmup,
+    thin = 1,
+    seed = 123  # For reproducibility
+  )
+  
+  saveRDS(m, model_file)
+  message("Model saved to: ", model_file)
+  
+  return(m)
+}
+```
+
+```{r data_paths, include=FALSE}
+# Define data paths (MODIFY THESE FOR YOUR SYSTEM)
+# Option 1: Use here() for project-relative paths (recommended)
+# data_dir <- here()
+
+# Option 2: Set absolute path (less portable)
+data_dir <- "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire"
+
+# Define subdirectories
+proc_data_dir <- file.path(data_dir, "Processes_data")
+raw_data_dir <- file.path(data_dir, "Raw_data")
+fig_dir <- file.path(data_dir, "Figures")
+```
+
+```{r load_chem_data, cache=TRUE, include=FALSE}
+# Load chemistry data
+test_dat <- read.csv(file.path(proc_data_dir, "ERDC_water_only_chem_dat_processed.csv")) %>%
+  select(-site) %>%   
+  rename(site = site_lab) %>%  
+  filter(site != "davis") %>%
+  mutate(
+    date = as.Date(date),
+    datetime = as.POSIXct(datetime),
+    burn_area = case_when(
+      site == "ophir" ~ 0,
+      site == "winters_usgs" ~ 65,
+      site == "winters_up" ~ 62,
+      site == "browns" ~ 42, 
+      site == "browns_sub" ~ 41
+    )
+  ) %>%
+  mutate(Sr_B_QC = Sr_QC / B_QC)
+```
+
+```{r load_tss_data, cache=TRUE, dependson="load_chem_data", include=FALSE}
+# Load and process TSS data
+tss_dat2 <- read_csv(file.path(raw_data_dir, "TSS_data.csv")) %>%
+  filter(site != "davis" | site != "ophir") %>%
+  mutate(
+    date = as.Date(Collection_date, format = "%m/%d/%y"),
+    TSS_mgL = parse_number(as.character(TSS_mgL))
+  ) %>%
+  select(site, date, TSS_mgL)
+
+# Average TSS_mgL for each site-date
+tss_mean <- tss_dat2 %>%
+  group_by(site, date) %>%
+  summarise(TSS_mgL = mean(TSS_mgL, na.rm = TRUE), .groups = "drop") %>%
+  mutate(TSS_mgL = ifelse(is.nan(TSS_mgL), NA_real_, TSS_mgL))
+
+# Merge chemistry and TSS data
+merged_df <- test_dat %>%
+  left_join(tss_mean, by = c("site", "date")) %>%
+  mutate(
+    TSS = as.numeric(TSS),
+    TSS = coalesce(TSS, TSS_mgL)
+  ) %>%
+  select(-TSS_mgL)
+```
+
+
+```{r load_hydro_data, cache=TRUE, dependson="load_hydro_data", include=FALSE}
+# hydro data
+
+flow_dat <-  read_csv(file.path(proc_data_dir, "ERDC_water_hourlyflow.csv")) %>%
+  mutate(date=as.Date(date)) %>%  filter((site!="davis" | site!="ophir")) %>%
+    mutate(Name = case_when(
+    site == "winters_usgs" ~ "winters",
+    site == "winters_up" ~ "winters",
+    site == "browns" ~ "browns", 
+    site == "browns_sub" ~ "browns"))
+
+str(flow_dat)
+
+# Load precipitation data
+ppt_dat <- read_csv(file.path(raw_data_dir, "prism_cat_new.csv")) %>%
+  filter((Name!="davis" | Name!="ophir")) %>%
+  mutate(
+    date = as.Date(Date, format = "%Y-%m-%d"),
+    lagPPT = lag(ppt..mm.),
+    lag_C_PPT = ppt..mm. + lagPPT) %>%
+  dplyr::select(Name, date, ppt..mm., lag_C_PPT)
+
+hydro_combined <-flow_dat %>%
+  left_join(ppt_dat, by=c("date", "Name")) 
+
+glimpse(hydro_combined)
+
+
+new_df_hydro <- hydro_combined %>%
+  arrange(site, date) %>%
+  group_by(site) %>%
+  mutate(flow_filled = zoo::na.approx(flow, x = date, na.rm = FALSE)) %>%
+  ungroup()
+
+```
+
+
+```{r data_prep, cache=TRUE, dependson="load_tss_data", include=FALSE}
+# Prepare data for plotting and modeling
+df_WQ_plot <- merged_df %>%
+  mutate(
+    burn_area = case_when(
+      site == "ophir" ~ 0,
+      site == "winters_usgs" ~ 65,
+      site == "winters_up" ~ 62,
+      site == "browns" ~ 42, 
+      site == "browns_sub" ~ 41
+    ),
+    site_lab = fct_reorder(site, burn_area, .fun = min, .desc = FALSE),
+    tsf = as.integer(difftime(datetime, ref_date, units = "days")) 
+  ) 
+```
+
+## Data Summary
+
+For all burned locations.
+
+```{r data_summary, echo=FALSE, include=TRUE}
+# Basic summary of loaded data
+summary_stats <- df_WQ_plot %>%
+  group_by(site) %>%
+  summarise(
+    n_samples = n(),
+    date_range = paste(min(date, na.rm = TRUE), "to", max(date, na.rm = TRUE)),
+    burn_area_pct = first(burn_area)
+  )
+
+kable(summary_stats, 
+      caption = "Summary of water quality sampling by site",
+      col.names = c("Site", "N Samples", "Date Range", "Burn Area (%)"))
+```
+
+## Exploratory Analysis
+
+### Covariate Relationships
+
+```{r covar_prep, cache=TRUE, dependson="data_prep", include=FALSE}
+
+
+vars <- c("TSS", "lag_C_PPT", "tsf", "flow_filled", "temp", "DO", "EC", "pH", "site")
+
+df_model <- df_WQ_plot %>%
+  left_join(new_df_hydro, by = c("site", "date")) %>%
+  filter(site != "ophir") %>%
+  select(all_of(vars)) %>%
+  drop_na() %>%
+  mutate(
+    catchment = case_when(
+      site == "winters_usgs" ~ "winters",
+      site == "winters_up" ~ "winters",
+      site == "browns" ~ "browns",
+      site == "browns_sub" ~ "browns"
+    )
+  )
+```
+
+```{r correlation_plot,echo=FALSE, include=TRUE, fig.width=10, fig.height=10}
+# Correlation matrix (only runs if df_model exists)
+covar_check <- df_model[, c(1:8)]
+chart.Correlation(covar_check, histogram = TRUE, pch = 19)
+```
+
+## Statistical Models
+
+### Frequentist Mixed Models (Precipitation)
+
+```{r ppt_models, cache=TRUE, dependson="covar_prep", include=FALSE}
+# Fit multiple precipitation models for comparison
+ppt_mod <- lmer(TSS ~ scale(lag_C_PPT) + scale(tsf) + 
+                scale(lag_C_PPT*tsf) + (1 | catchment/site), data = df_model)
+
+ppt_mod.1 <- lmer(TSS ~ scale(lag_C_PPT) + scale(tsf) + 
+                  (1 | catchment/site), data = df_model)
+
+ppt_mod.2 <- lmer(TSS ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) + 
+                  (1 | catchment/site), data = df_model)
+
+ppt_mod.3 <- lmer(TSS ~ scale(lag_C_PPT) + scale(tsf) + 
+                  scale(flow_filled*tsf) + (1 | catchment/site), data = df_model)
+
+ppt_mod.4 <- lmer(TSS ~ scale(lag_C_PPT) + (1 | catchment/site), data = df_model)
+
+ppt_mod.5 <- lmer(TSS ~ scale(lag_C_PPT) + scale(flow_filled) + 
+                  (1 | catchment/site), data = df_model)
+```
+
+```{r ppt_model_selection, echo=FALSE, include=TRUE}
+# Model comparison
+aic_table <- AIC(ppt_mod, ppt_mod.1, ppt_mod.2, ppt_mod.3, ppt_mod.4, ppt_mod.5)
+kable(aic_table, caption = "AIC comparison of precipitation models", digits = 2)
+
+# Model selection table
+sel_table <- model.sel(ppt_mod, ppt_mod.1, ppt_mod.2, ppt_mod.3, 
+                       ppt_mod.4, ppt_mod.5, rank = "AICc")
+kable(sel_table, caption = "Model selection based on AICc", digits = 2)
+```
+
+**Best model: ppt_mod.2** (TSS ~ PPT + TSF + Flow)
+
+Rationale:
+
+- ΔAICc difference trivial from ppt_mod.2 to the interaction models (ppt_mod and ppt_mod.3)
+
+- Interaction unsupported and more complex in ppt_mod
+
+- Strong collinearity (r = −0.871) in ppt_mod
+
+### Bayesian Models
+
+#### Model Setup
+
+```{r bayes_priors_TSS, cache=TRUE, dependson="covar_prep",  include=FALSE}
+# Define priors for TSS lognormal model
+mu0_TSS <- round(log(mean(df_model$TSS, na.rm = TRUE)), 2)
+
+priors_logn_TSS <- c(
+  set_prior(sprintf("normal(%f, 2)", mu0_TSS), class = "Intercept"),
+  set_prior("normal(0, 1)", class = "b"),
+  set_prior("exponential(1)", class = "sd"),
+  set_prior("exponential(1)", class = "sigma")
+)
+```
+
+#### TSS Model
+
+```{r TSS_bayes_fit, cache=TRUE, dependson="bayes_priors_TSS", include=FALSE}
+# Fit or load TSS Bayesian model
+TSS_m_logn <- fit_or_load_brm(
+  model_name = "TSS_lognormal",
+  formula = TSS ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
+                  catchment + (1 | catchment:site),
+  data = df_model,
+  family = lognormal(),
+  prior = priors_logn_TSS,
+  chains = 3,
+  cores = 3,
+  iter = 4000,
+  warmup = 2000
+)
+```
+
+```{r TSS_diagnostics, include=TRUE, echo=FALSE, fig.width=10, fig.height=6}
+# Trace plots
+plot(TSS_m_logn)
+```
+
+```{r TSS_pp_checks,include=TRUE, echo=FALSE, fig.width=10, fig.height=4}
+# Posterior predictive checks
+pp_check(TSS_m_logn, ndraws = 100)
+# pp_check(TSS_m_logn, type = "hist", ndraws = 5)
+```
+
+```{r TSS_results,include=TRUE, echo=FALSE}
+library(loo)
+# Model summary
+summary(TSS_m_logn)
+
+# LOO cross-validation
+loo_TSS <- loo(TSS_m_logn)
+print(loo_TSS)
+
+# Bayesian R²
+r2_TSS <- bayes_R2(TSS_m_logn)
+kable(r2_TSS, caption = "Bayesian R² for TSS Model", digits = 3)
+```
+
+```{r TSS_effects_extract, cache=TRUE, dependson="TSS_bayes_fit",  include=FALSE}
+# Extract effects and confidence intervals
+post_TSS <- posterior_summary(TSS_m_logn, pars = "^b_")
+
+effects_df_TSS <- data.frame(
+  term = gsub("^b_", "", rownames(post_TSS)),
+  estimate = post_TSS[, "Estimate"],
+  l95 = post_TSS[, "Q2.5"],
+  u95 = post_TSS[, "Q97.5"]
+) %>%
+  mutate(
+    estimate_exp = exp(estimate),
+    l95_exp = exp(l95),
+    u95_exp = exp(u95),
+    analyte = "TSS",
+    bayes_R2 = mean(bayes_R2(TSS_m_logn)[, "Estimate"])
+  )
+```
+
+```{r TSS_effects_table,  echo=FALSE}
+# Display effects table
+kable(effects_df_TSS %>% select(-analyte), 
+      caption = "TSS Model Effects (Log and Exponentiated Scale)",
+      digits = 3)
+```
+
+```{r TSS_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
+# Plot effects
+effects_df_TSS %>%
+  filter(term != "Intercept") %>%
+  ggplot(aes(x = estimate_exp, y = term)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
+  scale_x_log10() +
+  labs(
+    x = "Multiplicative effect (exp(β))",
+    y = NULL,
+    title = "TSS Model: Effect Sizes",
+    subtitle = sprintf("Bayesian R² = %.2f", unique(effects_df_TSS$bayes_R2))
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+#### DOC Model
+
+```{r covar_prep_DOC, cache=TRUE, dependson="data_prep", include=FALSE}
+
+
+vars <- c("DOC_QC", "lag_C_PPT", "tsf", "flow_filled", "temp", "DO", "EC", "pH", "site")
+
+df_model <- df_WQ_plot %>%
+  left_join(new_df_hydro, by = c("site", "date")) %>%
+  filter(site != "ophir") %>%
+  select(all_of(vars)) %>%
+  drop_na() %>%
+  mutate(
+    catchment = case_when(
+      site == "winters_usgs" ~ "winters",
+      site == "winters_up" ~ "winters",
+      site == "browns" ~ "browns",
+      site == "browns_sub" ~ "browns"
+    )
+  )
+```
+
+```{r bayes_priors_DOC, cache=TRUE, dependson="covar_prep", include=FALSE}
+
+mu0_DOC <- round(log(mean(df_model$DOC_QC, na.rm = TRUE)), 2)
+
+priors_logn_DOC <- c(
+  set_prior(sprintf("normal(%f, 2)", mu0_DOC), class = "Intercept"),
+  set_prior("normal(0, 1)", class = "b"),
+  set_prior("exponential(1)", class = "sd"),
+  set_prior("exponential(1)", class = "sigma")
+)
+```
+
+
+```{r DOC_bayes_fit, cache=TRUE, dependson="bayes_priors_DOC", include=FALSE}
+# Fit or load DOC Bayesian model
+DOC_m_logn <- fit_or_load_brm(
+  model_name = "DOC_lognormal",
+  formula = DOC_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
+                  catchment + (1 | catchment:site),
+  data = df_model,
+  family = lognormal(),
+  prior = priors_logn_DOC,
+  chains = 3,
+  cores = 3,
+  iter = 4000,
+  warmup = 2000
+)
+```
+
+```{r DOC_diagnostics, include=TRUE, echo=FALSE, fig.width=10, fig.height=6}
+# Trace plots
+plot(DOC_m_logn)
+```
+
+```{r DOC_pp_checks,include=TRUE, echo=FALSE, fig.width=10, fig.height=4}
+# Posterior predictive checks
+pp_check(DOC_m_logn, ndraws = 100)
+# pp_check(DOC_m_logn, type = "hist", ndraws = 5)
+```
+
+```{r DOC_results,include=TRUE, echo=FALSE}
+library(loo)
+# Model summary
+summary(DOC_m_logn)
+
+# LOO cross-validation
+loo_DOC <- loo(DOC_m_logn)
+print(loo_DOC)
+
+# Bayesian R²
+r2_DOC <- bayes_R2(DOC_m_logn)
+kable(r2_DOC, caption = "Bayesian R² for DOC Model", digits = 3)
+```
+
+```{r DOC_effects_extract, cache=TRUE, dependson="DOC_bayes_fit",  include=FALSE}
+# Extract effects and confidence intervals
+post_DOC <- posterior_summary(DOC_m_logn, pars = "^b_")
+
+effects_df_DOC <- data.frame(
+  term = gsub("^b_", "", rownames(post_DOC)),
+  estimate = post_DOC[, "Estimate"],
+  l95 = post_DOC[, "Q2.5"],
+  u95 = post_DOC[, "Q97.5"]
+) %>%
+  mutate(
+    estimate_exp = exp(estimate),
+    l95_exp = exp(l95),
+    u95_exp = exp(u95),
+    analyte = "DOC",
+    bayes_R2 = mean(bayes_R2(DOC_m_logn)[, "Estimate"])
+  )
+```
+
+```{r DOC_effects_table,  echo=FALSE}
+# Display effects table
+kable(effects_df_DOC %>% select(-analyte), 
+      caption = "DOC Model Effects (Log and Exponentiated Scale)",
+      digits = 3)
+```
+
+```{r DOC_effects_plot_DOC, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
+# Plot effects
+effects_df_DOC %>%
+  filter(term != "Intercept") %>%
+  ggplot(aes(x = estimate_exp, y = term)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
+  scale_x_log10() +
+  labs(
+    x = "Multiplicative effect (exp(β))",
+    y = NULL,
+    title = "DOC Model: Effect Sizes",
+    subtitle = sprintf("Bayesian R² = %.2f", unique(effects_df_DOC$bayes_R2))
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+
+
+#### TDN Model
+
+```{r covar_prep_TDN, cache=TRUE, dependson="data_prep", include=FALSE}
+
+vars <- c("TDN_QC", "lag_C_PPT", "tsf", "flow_filled", "temp", "DO", "EC", "pH", "site")
+
+df_model <- df_WQ_plot %>%
+  left_join(new_df_hydro, by = c("site", "date")) %>%
+  filter(site != "ophir") %>%
+  select(all_of(vars)) %>%
+  drop_na() %>%
+  mutate(
+    catchment = case_when(
+      site == "winters_usgs" ~ "winters",
+      site == "winters_up" ~ "winters",
+      site == "browns" ~ "browns",
+      site == "browns_sub" ~ "browns"
+    )
+  )
+```
+
+
+```{r bayes_priors_TDN, cache=TRUE, dependson="covar_prep",  include=FALSE}
+
+mu0_TDN <- round(log(mean(df_model$TDN_QC, na.rm = TRUE)), 2)
+
+priors_logn_TDN <- c(
+  set_prior(sprintf("normal(%f, 2)", mu0_TDN), class = "Intercept"),
+  set_prior("normal(0, 1)", class = "b"),
+  set_prior("exponential(1)", class = "sd"),
+  set_prior("exponential(1)", class = "sigma")
+)
+```
+
+
+```{r TDN_bayes_fit, cache=TRUE, dependson="bayes_priors_TDN", include=FALSE}
+# Fit or load TDN Bayesian model
+TDN_m_logn <- fit_or_load_brm(
+  model_name = "TDN_lognormal",
+  formula = TDN_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
+                  catchment + (1 | catchment:site),
+  data = df_model,
+  family = lognormal(),
+  prior = priors_logn_TDN,
+  chains = 3,
+  cores = 3,
+  iter = 4000,
+  warmup = 2000
+)
+```
+
+```{r TDN_diagnostics, include=TRUE, echo=FALSE, fig.width=10, fig.height=6}
+# Trace plots
+plot(TDN_m_logn)
+```
+
+```{r TDN_pp_checks,include=TRUE, echo=FALSE, fig.width=10, fig.height=4}
+# Posterior predictive checks
+pp_check(TDN_m_logn, ndraws = 100)
+# pp_check(TDN_m_logn, type = "hist", ndraws = 5)
+```
+
+```{r TDN_results,include=TRUE, echo=FALSE}
+library(loo)
+# Model summary
+summary(TDN_m_logn)
+
+# LOO cross-validation
+loo_TDN <- loo(TDN_m_logn)
+print(loo_TDN)
+
+# Bayesian R²
+r2_TDN <- bayes_R2(TDN_m_logn)
+kable(r2_TDN, caption = "Bayesian R² for TDN Model", digits = 3)
+```
+
+```{r TDN_effects_extract, cache=TRUE, dependson="TDN_bayes_fit",  include=FALSE}
+# Extract effects and confidence intervals
+post_TDN <- posterior_summary(TDN_m_logn, pars = "^b_")
+
+effects_df_TDN <- data.frame(
+  term = gsub("^b_", "", rownames(post_TDN)),
+  estimate = post_TDN[, "Estimate"],
+  l95 = post_TDN[, "Q2.5"],
+  u95 = post_TDN[, "Q97.5"]
+) %>%
+  mutate(
+    estimate_exp = exp(estimate),
+    l95_exp = exp(l95),
+    u95_exp = exp(u95),
+    analyte = "TDN",
+    bayes_R2 = mean(bayes_R2(TDN_m_logn)[, "Estimate"])
+  )
+```
+
+```{r TDN_effects_table,  echo=FALSE}
+# Display effects table
+kable(effects_df_TDN %>% select(-analyte), 
+      caption = "TDN Model Effects (Log and Exponentiated Scale)",
+      digits = 3)
+```
+
+```{r TDN_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
+# Plot effects
+effects_df_TDN %>%
+  filter(term != "Intercept") %>%
+  ggplot(aes(x = estimate_exp, y = term)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
+  scale_x_log10() +
+  labs(
+    x = "Multiplicative effect (exp(β))",
+    y = NULL,
+    title = "TDN Model: Effect Sizes",
+    subtitle = sprintf("Bayesian R² = %.2f", unique(effects_df_TDN$bayes_R2))
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+
+
+#### PO4.P Model
+
+```{r covar_prep_PO4.P, cache=TRUE, dependson="data_prep", include=FALSE}
+
+vars <- c("PO4.P_QC", "lag_C_PPT", "tsf", "flow_filled", "temp", "DO", "EC", "pH", "site")
+
+df_model <- df_WQ_plot %>%
+  left_join(new_df_hydro, by = c("site", "date")) %>%
+  filter(site != "ophir") %>%
+  select(all_of(vars)) %>%
+  drop_na() %>%
+  mutate(
+    catchment = case_when(
+      site == "winters_usgs" ~ "winters",
+      site == "winters_up" ~ "winters",
+      site == "browns" ~ "browns",
+      site == "browns_sub" ~ "browns"
+    )
+  )
+```
+
+
+```{r bayes_priors_PO4.P, cache=TRUE, dependson="covar_prep",  include=FALSE}
+
+mu0_PO4.P <- round(log(mean(df_model$PO4.P_QC, na.rm = TRUE)), 2)
+
+priors_logn_PO4.P <- c(
+  set_prior(sprintf("normal(%f, 2)", mu0_PO4.P), class = "Intercept"),
+  set_prior("normal(0, 1)", class = "b"),
+  set_prior("exponential(1)", class = "sd"),
+  set_prior("exponential(1)", class = "sigma")
+)
+```
+
+
+```{r PO4.P_bayes_fit, cache=TRUE, dependson="bayes_priors_PO4.P", include=FALSE}
+# Fit or load PO4.P Bayesian model
+PO4.P_m_logn <- fit_or_load_brm(
+  model_name = "PO4.P_lognormal",
+  formula = PO4.P_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
+                  catchment + (1 | catchment:site),
+  data = df_model,
+  family = lognormal(),
+  prior = priors_logn_PO4.P,
+  chains = 3,
+  cores = 3,
+  iter = 4000,
+  warmup = 2000
+)
+```
+
+```{r PO4.P_diagnostics, include=TRUE, echo=FALSE, fig.width=10, fig.height=6}
+# Trace plots
+plot(PO4.P_m_logn)
+```
+
+```{r PO4.P_pp_checks,include=TRUE, echo=FALSE, fig.width=10, fig.height=4}
+# Posterior predictive checks
+pp_check(PO4.P_m_logn, ndraws = 100)
+# pp_check(PO4.P_m_logn, type = "hist", ndraws = 5)
+```
+
+```{r PO4.P_results,include=TRUE, echo=FALSE}
+library(loo)
+# Model summary
+summary(PO4.P_m_logn)
+
+# LOO cross-validation
+loo_PO4.P <- loo(PO4.P_m_logn)
+print(loo_PO4.P)
+
+# Bayesian R²
+r2_PO4.P <- bayes_R2(PO4.P_m_logn)
+kable(r2_PO4.P, caption = "Bayesian R² for PO4.P Model", digits = 3)
+```
+
+```{r PO4.P_effects_extract, cache=TRUE, dependson="PO4.P_bayes_fit",  include=FALSE}
+# Extract effects and confidence intervals
+post_PO4.P <- posterior_summary(PO4.P_m_logn, pars = "^b_")
+
+effects_df_PO4.P <- data.frame(
+  term = gsub("^b_", "", rownames(post_PO4.P)),
+  estimate = post_PO4.P[, "Estimate"],
+  l95 = post_PO4.P[, "Q2.5"],
+  u95 = post_PO4.P[, "Q97.5"]
+) %>%
+  mutate(
+    estimate_exp = exp(estimate),
+    l95_exp = exp(l95),
+    u95_exp = exp(u95),
+    analyte = "PO4.P",
+    bayes_R2 = mean(bayes_R2(PO4.P_m_logn)[, "Estimate"])
+  )
+```
+
+```{r PO4.P_effects_table,  echo=FALSE}
+# Display effects table
+kable(effects_df_PO4.P %>% select(-analyte), 
+      caption = "PO4.P Model Effects (Log and Exponentiated Scale)",
+      digits = 3)
+```
+
+```{r PO4.P_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
+# Plot effects
+effects_df_PO4.P %>%
+  filter(term != "Intercept") %>%
+  ggplot(aes(x = estimate_exp, y = term)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
+  scale_x_log10() +
+  labs(
+    x = "Multiplicative effect (exp(β))",
+    y = NULL,
+    title = "PO4.P Model: Effect Sizes",
+    subtitle = sprintf("Bayesian R² = %.2f", unique(effects_df_PO4.P$bayes_R2))
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+
+
+#### Sr Model
+
+```{r covar_prep_Sr, cache=TRUE, dependson="data_prep", include=FALSE}
+
+vars <- c("Sr_QC", "lag_C_PPT", "tsf", "flow_filled", "temp", "DO", "EC", "pH", "site")
+
+df_model <- df_WQ_plot %>%
+  left_join(new_df_hydro, by = c("site", "date")) %>%
+  filter(site != "ophir") %>%
+  select(all_of(vars)) %>%
+  drop_na() %>%
+  mutate(
+    catchment = case_when(
+      site == "winters_usgs" ~ "winters",
+      site == "winters_up" ~ "winters",
+      site == "browns" ~ "browns",
+      site == "browns_sub" ~ "browns"
+    )
+  )
+```
+
+
+```{r bayes_priors_Sr, cache=TRUE, dependson="covar_prep",  include=FALSE}
+
+mu0_Sr <- round(log(mean(df_model$Sr_QC, na.rm = TRUE)), 2)
+
+priors_logn_Sr <- c(
+  set_prior(sprintf("normal(%f, 2)", mu0_Sr), class = "Intercept"),
+  set_prior("normal(0, 1)", class = "b"),
+  set_prior("exponential(1)", class = "sd"),
+  set_prior("exponential(1)", class = "sigma")
+)
+```
+
+
+```{r Sr_bayes_fit, cache=TRUE, dependson="bayes_priors_Sr", include=FALSE}
+# Fit or load Sr Bayesian model
+Sr_m_logn <- fit_or_load_brm(
+  model_name = "Sr_lognormal",
+  formula = Sr_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
+                  catchment + (1 | catchment:site),
+  data = df_model,
+  family = lognormal(),
+  prior = priors_logn_Sr,
+  chains = 3,
+  cores = 3,
+  iter = 4000,
+  warmup = 2000
+)
+```
+
+```{r Sr_diagnostics, include=TRUE, echo=FALSE, fig.width=10, fig.height=6}
+# Trace plots
+plot(Sr_m_logn)
+```
+
+```{r Sr_pp_checks,include=TRUE, echo=FALSE, fig.width=10, fig.height=4}
+# Posterior predictive checks
+pp_check(Sr_m_logn, ndraws = 100)
+# pp_check(Sr_m_logn, type = "hist", ndraws = 5)
+```
+
+```{r Sr_results,include=TRUE, echo=FALSE}
+library(loo)
+# Model summary
+summary(Sr_m_logn)
+
+# LOO cross-validation
+loo_Sr <- loo(Sr_m_logn)
+print(loo_Sr)
+
+# Bayesian R²
+r2_Sr <- bayes_R2(Sr_m_logn)
+kable(r2_Sr, caption = "Bayesian R² for Sr Model", digits = 3)
+```
+
+```{r Sr_effects_extract, cache=TRUE, dependson="Sr_bayes_fit",  include=FALSE}
+# Extract effects and confidence intervals
+post_Sr <- posterior_summary(Sr_m_logn, pars = "^b_")
+
+effects_df_Sr <- data.frame(
+  term = gsub("^b_", "", rownames(post_Sr)),
+  estimate = post_Sr[, "Estimate"],
+  l95 = post_Sr[, "Q2.5"],
+  u95 = post_Sr[, "Q97.5"]
+) %>%
+  mutate(
+    estimate_exp = exp(estimate),
+    l95_exp = exp(l95),
+    u95_exp = exp(u95),
+    analyte = "Sr",
+    bayes_R2 = mean(bayes_R2(Sr_m_logn)[, "Estimate"])
+  )
+```
+
+```{r Sr_effects_table,  echo=FALSE}
+# Display effects table
+kable(effects_df_Sr %>% select(-analyte), 
+      caption = "Sr Model Effects (Log and Exponentiated Scale)",
+      digits = 3)
+```
+
+```{r Sr_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
+# Plot effects
+effects_df_Sr %>%
+  filter(term != "Intercept") %>%
+  ggplot(aes(x = estimate_exp, y = term)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
+  scale_x_log10() +
+  labs(
+    x = "Multiplicative effect (exp(β))",
+    y = NULL,
+    title = "Sr Model: Effect Sizes",
+    subtitle = sprintf("Bayesian R² = %.2f", unique(effects_df_Sr$bayes_R2))
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+
+
+
+
+#### Fe Model
+
+```{r covar_prep_Fe, cache=TRUE, dependson="data_prep", include=FALSE}
+
+vars <- c("Fe_QC", "lag_C_PPT", "tsf", "flow_filled", "temp", "DO", "EC", "pH", "site")
+
+df_model <- df_WQ_plot %>%
+  left_join(new_df_hydro, by = c("site", "date")) %>%
+  filter(site != "ophir") %>%
+  select(all_of(vars)) %>%
+  drop_na() %>%
+  mutate(
+    catchment = case_when(
+      site == "winters_usgs" ~ "winters",
+      site == "winters_up" ~ "winters",
+      site == "browns" ~ "browns",
+      site == "browns_sub" ~ "browns"
+    )
+  )
+```
+
+
+```{r bayes_priors_Fe, cache=TRUE, dependson="covar_prep",  include=FALSE}
+
+mu0_Fe <- round(log(mean(df_model$Fe_QC, na.rm = TRUE)), 2)
+
+priors_logn_Fe <- c(
+  set_prior(sprintf("normal(%f, 2)", mu0_Fe), class = "Intercept"),
+  set_prior("normal(0, 1)", class = "b"),
+  set_prior("exponential(1)", class = "sd"),
+  set_prior("exponential(1)", class = "sigma")
+)
+```
+
+
+```{r Fe_bayes_fit, cache=TRUE, dependson="bayes_priors_Fe", include=FALSE}
+# Fit or load Fe Bayesian model
+Fe_m_logn <- fit_or_load_brm(
+  model_name = "Fe_lognormal",
+  formula = Fe_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
+                  catchment + (1 | catchment:site),
+  data = df_model,
+  family = lognormal(),
+  prior = priors_logn_Fe,
+  chains = 3,
+  cores = 3,
+  iter = 4000,
+  warmup = 2000
+)
+```
+
+```{r Fe_diagnostics, include=TRUE, echo=FALSE, fig.width=10, fig.height=6}
+# Trace plots
+plot(Fe_m_logn)
+```
+
+```{r Fe_pp_checks,include=TRUE, echo=FALSE, fig.width=10, fig.height=4}
+# Posterior predictive checks
+pp_check(Fe_m_logn, ndraws = 100)
+# pp_check(Fe_m_logn, type = "hist", ndraws = 5)
+```
+
+```{r Fe_results,include=TRUE, echo=FALSE}
+library(loo)
+# Model summary
+summary(Fe_m_logn)
+
+# LOO cross-validation
+loo_Fe <- loo(Fe_m_logn)
+print(loo_Fe)
+
+# Bayesian R²
+r2_Fe <- bayes_R2(Fe_m_logn)
+kable(r2_Fe, caption = "Bayesian R² for Fe Model", digits = 3)
+```
+
+```{r Fe_effects_extract, cache=TRUE, dependson="Fe_bayes_fit",  include=FALSE}
+# Extract effects and confidence intervals
+post_Fe <- posterior_summary(Fe_m_logn, pars = "^b_")
+
+effects_df_Fe <- data.frame(
+  term = gsub("^b_", "", rownames(post_Fe)),
+  estimate = post_Fe[, "Estimate"],
+  l95 = post_Fe[, "Q2.5"],
+  u95 = post_Fe[, "Q97.5"]
+) %>%
+  mutate(
+    estimate_exp = exp(estimate),
+    l95_exp = exp(l95),
+    u95_exp = exp(u95),
+    analyte = "Fe",
+    bayes_R2 = mean(bayes_R2(Fe_m_logn)[, "Estimate"])
+  )
+```
+
+```{r Fe_effects_table,  echo=FALSE}
+# Display effects table
+kable(effects_df_Fe %>% select(-analyte), 
+      caption = "Fe Model Effects (Log and Exponentiated Scale)",
+      digits = 3)
+```
+
+```{r Fe_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
+# Plot effects
+effects_df_Fe %>%
+  filter(term != "Intercept") %>%
+  ggplot(aes(x = estimate_exp, y = term)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
+  scale_x_log10() +
+  labs(
+    x = "Multiplicative effect (exp(β))",
+    y = NULL,
+    title = "Fe Model: Effect Sizes",
+    subtitle = sprintf("Bayesian R² = %.2f", unique(effects_df_Fe$bayes_R2))
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+
+
+
+
+#### Mn Model
+
+```{r covar_prep_Mn, cache=TRUE, dependson="data_prep", include=FALSE}
+
+vars <- c("Mn_QC", "lag_C_PPT", "tsf", "flow_filled", "temp", "DO", "EC", "pH", "site")
+
+df_model <- df_WQ_plot %>%
+  left_join(new_df_hydro, by = c("site", "date")) %>%
+  filter(site != "ophir") %>%
+  select(all_of(vars)) %>%
+  drop_na() %>%
+  mutate(
+    catchment = case_when(
+      site == "winters_usgs" ~ "winters",
+      site == "winters_up" ~ "winters",
+      site == "browns" ~ "browns",
+      site == "browns_sub" ~ "browns"
+    )
+  )
+```
+
+
+```{r bayes_priors_Mn, cache=TRUE, dependson="covar_prep",  include=FALSE}
+
+mu0_Mn <- round(log(mean(df_model$Mn_QC, na.rm = TRUE)), 2)
+
+priors_logn_Mn <- c(
+  set_prior(sprintf("normal(%f, 2)", mu0_Mn), class = "Intercept"),
+  set_prior("normal(0, 1)", class = "b"),
+  set_prior("exponential(1)", class = "sd"),
+  set_prior("exponential(1)", class = "sigma")
+)
+```
+
+
+```{r Mn_bayes_fit, cache=TRUE, dependson="bayes_priors_Mn", include=FALSE}
+# Fit or load Mn Bayesian model
+Mn_m_logn <- fit_or_load_brm(
+  model_name = "Mn_lognormal",
+  formula = Mn_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
+                  catchment + (1 | catchment:site),
+  data = df_model,
+  family = lognormal(),
+  prior = priors_logn_Mn,
+  chains = 3,
+  cores = 3,
+  iter = 4000,
+  warmup = 2000
+)
+```
+
+```{r Mn_diagnostics, include=TRUE, echo=FALSE, fig.width=10, fig.height=6}
+# Trace plots
+plot(Mn_m_logn)
+```
+
+```{r Mn_pp_checks,include=TRUE, echo=FALSE, fig.width=10, fig.height=4}
+# Posterior predictive checks
+pp_check(Mn_m_logn, ndraws = 100)
+# pp_check(Mn_m_logn, type = "hist", ndraws = 5)
+```
+
+```{r Mn_results,include=TRUE, echo=FALSE}
+library(loo)
+# Model summary
+summary(Mn_m_logn)
+
+# LOO cross-validation
+loo_Mn <- loo(Mn_m_logn)
+print(loo_Mn)
+
+# Bayesian R²
+r2_Mn <- bayes_R2(Mn_m_logn)
+kable(r2_Mn, caption = "Bayesian R² for Mn Model", digits = 3)
+```
+
+```{r Mn_effects_extract, cache=TRUE, dependson="Mn_bayes_fit",  include=FALSE}
+# Extract effects and confidence intervals
+post_Mn <- posterior_summary(Mn_m_logn, pars = "^b_")
+
+effects_df_Mn <- data.frame(
+  term = gsub("^b_", "", rownames(post_Mn)),
+  estimate = post_Mn[, "Estimate"],
+  l95 = post_Mn[, "Q2.5"],
+  u95 = post_Mn[, "Q97.5"]
+) %>%
+  mutate(
+    estimate_exp = exp(estimate),
+    l95_exp = exp(l95),
+    u95_exp = exp(u95),
+    analyte = "Mn",
+    bayes_R2 = mean(bayes_R2(Mn_m_logn)[, "Estimate"])
+  )
+```
+
+```{r Mn_effects_table,  echo=FALSE}
+# Display effects table
+kable(effects_df_Mn %>% select(-analyte), 
+      caption = "Mn Model Effects (Log and Exponentiated Scale)",
+      digits = 3)
+```
+
+```{r Mn_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
+# Plot effects
+effects_df_Mn %>%
+  filter(term != "Intercept") %>%
+  ggplot(aes(x = estimate_exp, y = term)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
+  scale_x_log10() +
+  labs(
+    x = "Multiplicative effect (exp(β))",
+    y = NULL,
+    title = "Mn Model: Effect Sizes",
+    subtitle = sprintf("Bayesian R² = %.2f", unique(effects_df_Mn$bayes_R2))
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+
+
+
+#### Ba Model
+
+```{r covar_prep_Ba, cache=TRUE, dependson="data_prep", include=FALSE}
+
+vars <- c("Ba_QC", "lag_C_PPT", "tsf", "flow_filled", "temp", "DO", "EC", "pH", "site")
+
+df_model <- df_WQ_plot %>%
+  left_join(new_df_hydro, by = c("site", "date")) %>%
+  filter(site != "ophir") %>%
+  select(all_of(vars)) %>%
+  drop_na() %>%
+  mutate(
+    catchment = case_when(
+      site == "winters_usgs" ~ "winters",
+      site == "winters_up" ~ "winters",
+      site == "browns" ~ "browns",
+      site == "browns_sub" ~ "browns"
+    )
+  )
+```
+
+
+```{r bayes_priors_Ba, cache=TRUE, dependson="covar_prep",  include=FALSE}
+
+mu0_Ba <- round(log(mean(df_model$Ba_QC, na.rm = TRUE)), 2)
+
+priors_logn_Ba <- c(
+  set_prior(sprintf("normal(%f, 2)", mu0_Ba), class = "Intercept"),
+  set_prior("normal(0, 1)", class = "b"),
+  set_prior("exponential(1)", class = "sd"),
+  set_prior("exponential(1)", class = "sigma")
+)
+```
+
+
+```{r Ba_bayes_fit, cache=TRUE, dependson="bayes_priors_Ba", include=FALSE}
+# Fit or load Ba Bayesian model
+Ba_m_logn <- fit_or_load_brm(
+  model_name = "Ba_lognormal",
+  formula = Ba_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
+                  catchment + (1 | catchment:site),
+  data = df_model,
+  family = lognormal(),
+  prior = priors_logn_Ba,
+  chains = 3,
+  cores = 3,
+  iter = 4000,
+  warmup = 2000
+)
+```
+
+```{r Ba_diagnostics, include=TRUE, echo=FALSE, fig.width=10, fig.height=6}
+# Trace plots
+plot(Ba_m_logn)
+```
+
+```{r Ba_pp_checks,include=TRUE, echo=FALSE, fig.width=10, fig.height=4}
+# Posterior predictive checks
+pp_check(Ba_m_logn, ndraws = 100)
+# pp_check(Ba_m_logn, type = "hist", ndraws = 5)
+```
+
+```{r Ba_results,include=TRUE, echo=FALSE}
+library(loo)
+# Model summary
+summary(Ba_m_logn)
+
+# LOO cross-validation
+loo_Ba <- loo(Ba_m_logn)
+print(loo_Ba)
+
+# Bayesian R²
+r2_Ba <- bayes_R2(Ba_m_logn)
+kable(r2_Ba, caption = "Bayesian R² for Ba Model", digits = 3)
+```
+
+```{r Ba_effects_extract, cache=TRUE, dependson="Ba_bayes_fit",  include=FALSE}
+# Extract effects and confidence intervals
+post_Ba <- posterior_summary(Ba_m_logn, pars = "^b_")
+
+effects_df_Ba <- data.frame(
+  term = gsub("^b_", "", rownames(post_Ba)),
+  estimate = post_Ba[, "Estimate"],
+  l95 = post_Ba[, "Q2.5"],
+  u95 = post_Ba[, "Q97.5"]
+) %>%
+  mutate(
+    estimate_exp = exp(estimate),
+    l95_exp = exp(l95),
+    u95_exp = exp(u95),
+    analyte = "Ba",
+    bayes_R2 = mean(bayes_R2(Ba_m_logn)[, "Estimate"])
+  )
+```
+
+```{r Ba_effects_table,  echo=FALSE}
+# Display effects table
+kable(effects_df_Ba %>% select(-analyte), 
+      caption = "Ba Model Effects (Log and Exponentiated Scale)",
+      digits = 3)
+```
+
+```{r Ba_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
+# Plot effects
+effects_df_Ba %>%
+  filter(term != "Intercept") %>%
+  ggplot(aes(x = estimate_exp, y = term)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
+  scale_x_log10() +
+  labs(
+    x = "Multiplicative effect (exp(β))",
+    y = NULL,
+    title = "Ba Model: Effect Sizes",
+    subtitle = sprintf("Bayesian R² = %.2f", unique(effects_df_Ba$bayes_R2))
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+
+
+
+
+#### Ca Model
+
+```{r covar_prep_Ca, cache=TRUE, dependson="data_prep", include=FALSE}
+
+vars <- c("Ca_QC", "lag_C_PPT", "tsf", "flow_filled", "temp", "DO", "EC", "pH", "site")
+
+df_model <- df_WQ_plot %>%
+  left_join(new_df_hydro, by = c("site", "date")) %>%
+  filter(site != "ophir") %>%
+  select(all_of(vars)) %>%
+  drop_na() %>%
+  mutate(
+    catchment = case_when(
+      site == "winters_usgs" ~ "winters",
+      site == "winters_up" ~ "winters",
+      site == "browns" ~ "browns",
+      site == "browns_sub" ~ "browns"
+    )
+  )
+```
+
+
+```{r bayes_priors_Ca, cache=TRUE, dependson="covar_prep",  include=FALSE}
+
+mu0_Ca <- round(log(mean(df_model$Ca_QC, na.rm = TRUE)), 2)
+
+priors_logn_Ca <- c(
+  set_prior(sprintf("normal(%f, 2)", mu0_Ca), class = "Intercept"),
+  set_prior("normal(0, 1)", class = "b"),
+  set_prior("exponential(1)", class = "sd"),
+  set_prior("exponential(1)", class = "sigma")
+)
+```
+
+
+```{r Ca_bayes_fit, cache=TRUE, dependson="bayes_priors_Ca", include=FALSE}
+# Fit or load Ca Bayesian model
+Ca_m_logn <- fit_or_load_brm(
+  model_name = "Ca_lognormal",
+  formula = Ca_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
+                  catchment + (1 | catchment:site),
+  data = df_model,
+  family = lognormal(),
+  prior = priors_logn_Ca,
+  chains = 3,
+  cores = 3,
+  iter = 4000,
+  warmup = 2000
+)
+```
+
+```{r Ca_diagnostics, include=TRUE, echo=FALSE, fig.width=10, fig.height=6}
+# Trace plots
+plot(Ca_m_logn)
+```
+
+```{r Ca_pp_checks,include=TRUE, echo=FALSE, fig.width=10, fig.height=4}
+# Posterior predictive checks
+pp_check(Ca_m_logn, ndraws = 100)
+# pp_check(Ca_m_logn, type = "hist", ndraws = 5)
+```
+
+```{r Ca_results,include=TRUE, echo=FALSE}
+library(loo)
+# Model summary
+summary(Ca_m_logn)
+
+# LOO cross-validation
+loo_Ca <- loo(Ca_m_logn)
+print(loo_Ca)
+
+# Bayesian R²
+r2_Ca <- bayes_R2(Ca_m_logn)
+kable(r2_Ca, caption = "Bayesian R² for Ca Model", digits = 3)
+```
+
+```{r Ca_effects_extract, cache=TRUE, dependson="Ca_bayes_fit",  include=FALSE}
+# Extract effects and confidence intervals
+post_Ca <- posterior_summary(Ca_m_logn, pars = "^b_")
+
+effects_df_Ca <- data.frame(
+  term = gsub("^b_", "", rownames(post_Ca)),
+  estimate = post_Ca[, "Estimate"],
+  l95 = post_Ca[, "Q2.5"],
+  u95 = post_Ca[, "Q97.5"]
+) %>%
+  mutate(
+    estimate_exp = exp(estimate),
+    l95_exp = exp(l95),
+    u95_exp = exp(u95),
+    analyte = "Ca",
+    bayes_R2 = mean(bayes_R2(Ca_m_logn)[, "Estimate"])
+  )
+```
+
+```{r Ca_effects_table,  echo=FALSE}
+# Display effects table
+kable(effects_df_Ca %>% select(-analyte), 
+      caption = "Ca Model Effects (Log and Exponentiated Scale)",
+      digits = 3)
+```
+
+```{r Ca_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
+# Plot effects
+effects_df_Ca %>%
+  filter(term != "Intercept") %>%
+  ggplot(aes(x = estimate_exp, y = term)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
+  scale_x_log10() +
+  labs(
+    x = "Multiplicative effect (exp(β))",
+    y = NULL,
+    title = "Ca Model: Effect Sizes",
+    subtitle = sprintf("Bayesian R² = %.2f", unique(effects_df_Ca$bayes_R2))
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+
+
+
+
+#### Al Model
+
+```{r covar_prep_Al, cache=TRUE, dependson="data_prep", include=FALSE}
+
+vars <- c("Al_QC", "lag_C_PPT", "tsf", "flow_filled", "temp", "DO", "EC", "pH", "site")
+
+df_model <- df_WQ_plot %>%
+  left_join(new_df_hydro, by = c("site", "date")) %>%
+  filter(site != "ophir") %>%
+  select(all_of(vars)) %>%
+  drop_na() %>%
+  mutate(
+    catchment = case_when(
+      site == "winters_usgs" ~ "winters",
+      site == "winters_up" ~ "winters",
+      site == "browns" ~ "browns",
+      site == "browns_sub" ~ "browns"
+    )
+  )
+```
+
+
+```{r bayes_priors_Al, cache=TRUE, dependson="covar_prep",  include=FALSE}
+
+mu0_Al <- round(log(mean(df_model$Al_QC, na.rm = TRUE)), 2)
+
+priors_logn_Al <- c(
+  set_prior(sprintf("normal(%f, 2)", mu0_Al), class = "Intercept"),
+  set_prior("normal(0, 1)", class = "b"),
+  set_prior("exponential(1)", class = "sd"),
+  set_prior("exponential(1)", class = "sigma")
+)
+```
+
+
+```{r Al_bayes_fit, cache=TRUE, dependson="bayes_priors_Al", include=FALSE}
+# Fit or load Al Bayesian model
+Al_m_logn <- fit_or_load_brm(
+  model_name = "Al_lognormal",
+  formula = Al_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
+                  catchment + (1 | catchment:site),
+  data = df_model,
+  family = lognormal(),
+  prior = priors_logn_Al,
+  chains = 3,
+  cores = 3,
+  iter = 4000,
+  warmup = 2000
+)
+```
+
+```{r Al_diagnostics, include=TRUE, echo=FALSE, fig.width=10, fig.height=6}
+# Trace plots
+plot(Al_m_logn)
+```
+
+```{r Al_pp_checks,include=TRUE, echo=FALSE, fig.width=10, fig.height=4}
+# Posterior predictive checks
+pp_check(Al_m_logn, ndraws = 100)
+# pp_check(Al_m_logn, type = "hist", ndraws = 5)
+```
+
+```{r Al_results,include=TRUE, echo=FALSE}
+library(loo)
+# Model summary
+summary(Al_m_logn)
+
+# LOO cross-validation
+loo_Al <- loo(Al_m_logn)
+print(loo_Al)
+
+# Bayesian R²
+r2_Al <- bayes_R2(Al_m_logn)
+kable(r2_Al, caption = "Bayesian R² for Al Model", digits = 3)
+```
+
+```{r Al_effects_extract, cache=TRUE, dependson="Al_bayes_fit",  include=FALSE}
+# Extract effects and confidence intervals
+post_Al <- posterior_summary(Al_m_logn, pars = "^b_")
+
+effects_df_Al <- data.frame(
+  term = gsub("^b_", "", rownames(post_Al)),
+  estimate = post_Al[, "Estimate"],
+  l95 = post_Al[, "Q2.5"],
+  u95 = post_Al[, "Q97.5"]
+) %>%
+  mutate(
+    estimate_exp = exp(estimate),
+    l95_exp = exp(l95),
+    u95_exp = exp(u95),
+    analyte = "Al",
+    bayes_R2 = mean(bayes_R2(Al_m_logn)[, "Estimate"])
+  )
+```
+
+
+```{r Al_effects_table,  echo=FALSE}
+# Display effects table
+kable(effects_df_Al %>% select(-analyte), 
+      caption = "Al Model Effects (Log and Exponentiated Scale)",
+      digits = 3)
+```
+
+```{r Al_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
+# Plot effects
+effects_df_Al %>%
+  filter(term != "Intercept") %>%
+  ggplot(aes(x = estimate_exp, y = term)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
+  scale_x_log10() +
+  labs(
+    x = "Multiplicative effect (exp(β))",
+    y = NULL,
+    title = "Al Model: Effect Sizes",
+    subtitle = sprintf("Bayesian R² = %.2f", unique(effects_df_Al$bayes_R2))
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+```
+
+---
+
+
+---
+
+## Combined Results
+
+```{r combine_effects,  cache=TRUE, include=FALSE}
+# Combine all analyte effects (assuming all models have been fit)
+coeff_plt_df <- rbind(
+  effects_df_TSS,
+  effects_df_DOC,
+  effects_df_TDN,
+  effects_df_PO4.P,
+  effects_df_Sr,
+  effects_df_Fe,
+  effects_df_Mn,
+  effects_df_Ba,
+  effects_df_Ca,
+  effects_df_Al)
+# 
+# # Save combined results
+# write_csv(coeff_plt_df, file.path(proc_data_dir, "coeff_plt_df.csv"))
+
+```
+
+```{r final_coefficient_plot,  include=TRUE, echo=FALSE, fig.width=9, fig.height=9}
+# Create publication-quality coefficient plot
+# (This code assumes coeff_plt_df exists from all fitted models)
+
+analyte_order <- coeff_plt_df %>%
+ # filter(analyte %in% c("PO4.P", "TDN", "DOC", "TSS")) %>%
+  group_by(analyte) %>%
+  summarise(bayes_R2_analyte = mean(bayes_R2, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(bayes_R2_analyte)) %>%
+  pull(analyte)
+
+model_plt <- coeff_plt_df %>%
+  filter(analyte %in% c("PO4.P", "TDN", "DOC", "TSS")) %>%
+  filter(term != "Intercept", term != "catchmentwinters") %>%
+  mutate(analyte = factor(analyte, levels = analyte_order)) %>%
+  ggplot(aes(x = estimate_exp, y = term, #color = bayes_R2, 
+             shape = term)) +
+  geom_vline(xintercept = 1, linetype = 2) +
+  geom_errorbarh(aes(xmin = l95_exp, xmax = u95_exp), height = 0) +
+  geom_point(size = 2) +
+  facet_grid(analyte ~ .) +
+  scale_x_log10() +
+  labs(
+    x = "Scaled effect on solute concentration",
+    y = NULL
+  ) +
+  scale_y_discrete(labels = c(
+    scalelag_C_PPT = expression(beta["Precipitation"]),
+    scaletsf = expression(beta["Days since fire"]),
+    scaleflow_filled = expression(beta["Flow"])
+  )) +
+  scale_color_viridis_c(option = "viridis", name = "Bayes R²") +
+  scale_shape_discrete(
+    name = "Predictor",
+    labels = c(
+      scalelag_C_PPT = "Precipitation",
+      scaletsf = "Days since fire",
+      scaleflow_filled = "Flow"
+    )
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.y = element_text(size = 14),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+print(model_plt)
+
+# #Save figure
+ggsave(
+  filename = file.path(fig_dir, "ERDC_coeff_plts_GPHS.png"),
+  plot = model_plt,
+  width = 5.5,
+  height = 4.75,
+  dpi = 300
+)
+
+```
+
+## Session Info
+
+```{r session_info, echo=FALSE}
+sessionInfo()
+```
+
+---
+
+###  
+
+```r
+# Clear all cached results
+unlink("_cache", recursive = TRUE)
+unlink("models", recursive = TRUE)
+
+# Re-render (will take 2-3 hours for all models)
+rmarkdown::render("ERDC_MS_solute_stats_REFACTORED.Rmd")
+```

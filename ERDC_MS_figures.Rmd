@@ -4,12 +4,13 @@ subtitle: "Figures 2-4  box plots, double mass curves, coefficient estimates"
 author: "Kelly Loria"
 date: "`r Sys.Date()`"
 output:
-  html_document:
-    theme: united
-    highlight: tango
-  pdf_document: default
-editor_options:
-  markdown:
+  github_document:
+    toc: true
+    toc_depth: 3
+    html_preview: false
+always_allow_html: true
+editor_options: 
+  markdown: 
     wrap: 72
 ---
 
@@ -275,7 +276,7 @@ event_summary <- df_events %>%
   summarise(
     event_start_date = min(date),
     event_end_date   = max(date),
-    duration_days    = as.integer(event_end_date - event_start_date) + 1,
+    duration_days    = as.integer((event_end_date - event_start_date) + 1),
 
     peak_flow        = max(Q, na.rm = TRUE),
     peak_flow_date   = date[which.max(Q)][1],
@@ -755,7 +756,7 @@ SrB_QC_plot  <- wq_boxplot(df_WQ_plot, Sr_B_QC, expression(Sr:B~(mu*g~L^-1)),  h
 #### Boxplot of solutes
 
 
-```{r,  fig.width=6, fig.height=4, out.width="85%", echo=F}
+```{r,  fig.width=10, fig.height=8, out.width="85%", echo=F}
 
 library(cowplot)
 
@@ -778,7 +779,7 @@ library(grid)
 
 legend_plot <- as_ggplot(legend)
 
-DMC_grid_nuts <- ggarrange(
+DMC_grid_bp <- ggarrange(
   plotlist = c(plots, list(legend_plot)),
   ncol = 4,
   nrow = 3,
@@ -790,14 +791,14 @@ DMC_grid_nuts <- ggarrange(
   font.label = list(size = 12, face = "bold")
 )
 
-DMC_grid_nuts
+DMC_grid_bp
 
 
 
 ```
 
 ```{r, echo=FALSE, include =F}
-# ggsave(plot = DMC_grid_nuts, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/Nuts_load_grid_plot.png",sep=""),width=8,height=7,dpi=300)
+# ggsave(plot = DMC_grid_nuts, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/Nuts_concentrations_boxplot_grid_plot.png",sep=""),width=8,height=7,dpi=300)
 
 ```
 
@@ -885,20 +886,39 @@ prep_flow <- function(new_df_hydro, flow_start = as.Date("2024-10-01")) {
 
 #### YOU ARE HERE 
 
+# 
+# prep_storm_flags <- function(event_summary,test_keys) {
+#   event_summary %>%
+#     dplyr::select(site, event_id_lf, event_start_date, event_end_date, duration_days) %>%
+#     dplyr::filter(!is.na(event_start_date), !is.na(event_end_date)) %>%
+#     dplyr::arrange(site, event_start_date) %>%
+#     dplyr::distinct(site, event_id_lf, event_start_date, event_end_date, .keep_all = TRUE)
+# 
+#   test_keys %>%
+#     dplyr::select(site, date) %>%
+#     inner_join(prep_storm_flags, by = c("site", "date")) %>%
+#     transmute(site, date, storm = "storm") %>%
+#     distinct()
+# }
 
-prep_storm_flags <- function(event_summary,test_keys) {
-  event_summary %>%
+prep_storm_flags <- function(event_summary, test_keys) {
+
+  storms <- event_summary %>%
     dplyr::select(site, event_id_lf, event_start_date, event_end_date, duration_days) %>%
     dplyr::filter(!is.na(event_start_date), !is.na(event_end_date)) %>%
     dplyr::arrange(site, event_start_date) %>%
     dplyr::distinct(site, event_id_lf, event_start_date, event_end_date, .keep_all = TRUE)
 
-  test_keys %>%
-    dplyr::select(site, date) %>%
-    inner_join(prep_storm_flags, by = c("site", "date")) %>%
-    transmute(site, date, storm = "storm") %>%
-    distinct()
+  keys <- test_keys %>%
+    dplyr::select(site, date)
+
+  keys %>%
+    dplyr::inner_join(storms, by = "site") %>%              # match by site first
+    dplyr::filter(date >= event_start_date, date <= event_end_date) %>%  # then interval
+    dplyr::transmute(site, date, storm = "storm") %>%
+    dplyr::distinct()
 }
+
 
 ```
 
@@ -1258,11 +1278,11 @@ inference_TSS
 ```
 
 
-```{r,  fig.width=9, fig.height=3, out.width="90%"}
+```{r,  fig.width=9, fig.height=3, out.width="90%", include=F}
 
 DMC_TSS_plot <- plot_dmc(davis_TSS, models_TSS, 
-                         flow_label = expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
-                         value_label = expression(Normalized~TSS~load~(mg~L^-1)))
+                         flow_label = NULL,
+                         value_label = expression(Norm.~TSS~(mg~L^-1)))
 DMC_TSS_plot
 
 ```
@@ -1273,7 +1293,7 @@ bp_TSS <- breakpoint_analysis_by_site(TSS_fit$df)
 bp_TSS
 ```
 
-```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+```{r,  fig.width=7, fig.height=2.25, out.width="85%", include=F}
 
 DMCres_TSS_plot <- plot_cumul_resid(
   resid_df   = TSS_resid,
@@ -1299,11 +1319,11 @@ inference_DOC
 ```
 
 
-```{r,  fig.width=9, fig.height=5, out.width="90%"}
+```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
 
 DMC_DOC_plot <- plot_dmc(davis_DOC, models_DOC, 
-                         flow_label = expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
-                         value_label = expression(Normalized~DOC~load~(mg~L^-1)))
+                         flow_label = NULL,
+                         value_label = expression(Norm.~DOC~(mg~L^-1)))
 DMC_DOC_plot
 ```
 
@@ -1313,7 +1333,7 @@ bp_DOC <- breakpoint_analysis_by_site(DOC_fit$df)
 bp_DOC
 ```
 
-```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+```{r,  fig.width=7, fig.height=2.25, out.width="85%", include=F}
 
 DMCres_DOC_plot <- plot_cumul_resid(
   resid_df   = DOC_resid,
@@ -1339,11 +1359,11 @@ inference_TDN
 ```
 
 
-```{r,  fig.width=9, fig.height=5, out.width="90%"}
+```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
 
 DMC_TDN_plot <- plot_dmc(davis_TDN, models_TDN, 
-                         flow_label = expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
-                         value_label = expression(Normalized~TDN~load~(mg~L^-1)))
+                         flow_label = NULL,
+                         value_label = expression(Norm.~TDN~(mg~L^-1)))
 DMC_TDN_plot
 ```
 
@@ -1353,7 +1373,7 @@ bp_TDN <- breakpoint_analysis_by_site(TDN_fit$df)
 bp_TDN
 ```
 
-```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+```{r,  fig.width=7, fig.height=2.25, out.width="85%", include=F}
 
 DMCres_TDN_plot <- plot_cumul_resid(
   resid_df   = TDN_resid,
@@ -1377,21 +1397,22 @@ inference_PO4 <- infer_slopes_vs1(models_PO4)
 inference_PO4
 ```
 
-```{r,  fig.width=9, fig.height=5, out.width="90%"}
+```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
 
 DMC_PO4_plot <- plot_dmc(davis_PO4, models_PO4,
-                         flow_label = expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
-                         value_label = expression(Normalized~PO[4]~load~(mg~L^-1)))
+                         flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
+                         value_label = expression(Norm.~PO[4]~(mg~L^-1)))
 DMC_PO4_plot
 ```
 
 ```{r}
+
 PO4_resid <- calc_cumul_resid(PO4_fit$df, PO4_fit$models)
 bp_PO4 <- breakpoint_analysis_by_site(PO4_fit$df)
 bp_PO4
 ```
 
-```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+```{r,  fig.width=7, fig.height=2.25, out.width="85%", include=F}
 
 DMCres_PO4_plot <- plot_cumul_resid(
   resid_df   = PO4_resid,
@@ -1417,9 +1438,11 @@ inference_Al <- infer_slopes_vs1(models_Al)
 inference_Al
 ```
 
-```{r,  fig.width=9, fig.height=5, out.width="90%"}
+```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
 
-DMC_Al_plot <- plot_dmc(davis_Al, models_Al, value_label = "Al load")
+DMC_Al_plot <- plot_dmc(davis_Al, models_Al,
+                        flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
+                       value_label = expression(Norm.~Al~(mg~L^-1)))
 DMC_Al_plot
 ```
 
@@ -1429,7 +1452,7 @@ bp_Al <- breakpoint_analysis_by_site(Al_fit$df)
 bp_Al
 ```
 
-```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+```{r,  fig.width=7, fig.height=2.25, out.width="85%", include=F}
 
 DMCres_Al_plot <- plot_cumul_resid(
   resid_df   = Al_resid,
@@ -1454,9 +1477,11 @@ inference_As <- infer_slopes_vs1(models_As)
 inference_As
 ```
 
-```{r,  fig.width=9, fig.height=5, out.width="90%"}
+```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
 
-DMC_As_plot <- plot_dmc(davis_As, models_As, value_label = "As load")
+DMC_As_plot <- plot_dmc(davis_As, models_As, 
+                        flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
+                       value_label = expression(Norm.~As~(mg~L^-1)))
 DMC_As_plot
 ```
 
@@ -1466,7 +1491,7 @@ bp_As <- breakpoint_analysis_by_site(As_fit$df)
 bp_As
 ```
 
-```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+```{r,  fig.width=7, fig.height=2.25, out.width="85%", include=F}
 
 DMCres_As_plot <- plot_cumul_resid(
   resid_df   = As_resid,
@@ -1490,9 +1515,11 @@ inference_B <- infer_slopes_vs1(models_B)
 inference_B
 ```
 
-```{r,  fig.width=9, fig.height=5, out.width="90%"}
+```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
 
-DMC_B_plot <- plot_dmc(davis_B, models_B, value_label = "B load")
+DMC_B_plot <- plot_dmc(davis_B, models_B,
+                       flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
+                       value_label = expression(Norm.~B~(mg~L^-1)))
 DMC_B_plot
 ```
 
@@ -1502,7 +1529,7 @@ bp_B <- breakpoint_analysis_by_site(B_fit$df)
 bp_B
 ```
 
-```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+```{r,  fig.width=7, fig.height=2.25, out.width="85%", include=F}
 
 DMBes_B_plot <- plot_cumul_resid(
   resid_df   = B_resid,
@@ -1511,7 +1538,6 @@ DMBes_B_plot <- plot_cumul_resid(
   ylab = "C residuals B ~ Q"
 )
 
-DMBes_B_plot
 ```
 
 
@@ -1526,9 +1552,12 @@ inference_Ba <- infer_slopes_vs1(models_Ba)
 inference_Ba
 ```
 
-```{r,  fig.width=9, fig.height=5, out.width="90%"}
+```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
 
-DMC_Ba_plot <- plot_dmc(davis_Ba, models_Ba, value_label = "Ba load")
+DMC_Ba_plot <- plot_dmc(davis_Ba, models_Ba, 
+                        flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
+                       value_label = expression(Norm.~Ba~(mg~L^-1)))
+         
 DMC_Ba_plot
 ```
 
@@ -1538,7 +1567,7 @@ bp_Ba <- breakpoint_analysis_by_site(Ba_fit$df)
 bp_Ba
 ```
 
-```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+```{r,  fig.width=7, fig.height=2.25, out.width="85%", include=F}
 
 DMCres_Ba_plot <- plot_cumul_resid(
   resid_df   = Ba_resid,
@@ -1562,9 +1591,11 @@ inference_Ca <- infer_slopes_vs1(models_Ca)
 inference_Ca
 ```
 
-```{r,  fig.width=9, fig.height=5, out.width="90%"}
+```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
 
-DMC_Ca_plot <- plot_dmc(davis_Ca, models_Ca, value_label = "Ca load")
+DMC_Ca_plot <- plot_dmc(davis_Ca, models_Ca,
+                        flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
+                       value_label = expression(Norm.~Ca~(mg~L^-1)))
 DMC_Ca_plot
 ```
 
@@ -1574,7 +1605,7 @@ bp_Ca <- breakpoint_analysis_by_site(Ca_fit$df)
 bp_Ca
 ```
 
-```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+```{r,  fig.width=7, fig.height=2.25, out.width="85%", include=F}
 
 DMCres_Ca_plot <- plot_cumul_resid(
   resid_df   = Ca_resid,
@@ -1600,7 +1631,7 @@ inference_Cr <- infer_slopes_vs1(models_Cr)
 inference_Cr
 ```
 
-```{r,  fig.width=9, fig.height=5, out.width="90%"}
+```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
 
 DMC_Cr_plot <- plot_dmc(davis_Cr, models_Cr, value_label = "Cr load")
 DMC_Cr_plot
@@ -1612,7 +1643,7 @@ bp_Cr <- breakpoint_analysis_by_site(Cr_fit$df)
 bp_Cr
 ```
 
-```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+```{r,  fig.width=7, fig.height=2.25, out.width="85%", include=F}
 
 DMCres_Cr_plot <- plot_cumul_resid(
   resid_df   = Cr_resid,
@@ -1637,8 +1668,10 @@ inference_Fe <- infer_slopes_vs1(models_Fe)
 inference_Fe
 ```
 
-```{r,  fig.width=9, fig.height=5, out.width="90%"}
-DMC_Fe_plot <- plot_dmc(davis_Fe, models_Fe, value_label = "Fe load")
+```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
+DMC_Fe_plot <- plot_dmc(davis_Fe, models_Fe,
+                        flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
+                       value_label = expression(Norm.~Fe~(mg~L^-1)))
 DMC_Fe_plot
 ```
 
@@ -1649,7 +1682,7 @@ bp_Fe
 ```
 
 
-```{r, fig.width=7, fig.height=2.25, out.width="85%"}
+```{r, fig.width=7, fig.height=2.25, out.width="85%", include=F}
 
 DMCres_Fe_plot <- plot_cumul_resid(
   resid_df   = Fe_resid,
@@ -1672,9 +1705,11 @@ inference_Mn <- infer_slopes_vs1(models_Mn)
 inference_Mn
 ```
 
-```{r,  fig.width=9, fig.height=5, out.width="90%"}
+```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
 
-DMC_Mn_plot <- plot_dmc(davis_Mn, models_Mn, value_label = "Mn load")
+DMC_Mn_plot <- plot_dmc(davis_Mn, models_Mn, 
+                        flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
+                       value_label = expression(Norm.~Mn~(mg~L^-1)))
 DMC_Mn_plot
 ```
 
@@ -1684,7 +1719,7 @@ bp_Mn <- breakpoint_analysis_by_site(Mn_fit$df)
 bp_Mn
 ```
 
-```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+```{r,  fig.width=7, fig.height=2.25, out.width="85%", include=F}
 
 DMCres_Mn_plot <- plot_cumul_resid(
   resid_df   = Mn_resid,
@@ -1709,7 +1744,7 @@ inference_Pb <- infer_slopes_vs1(models_Pb)
 inference_Pb
 ```
 
-```{r,  fig.width=9, fig.height=5, out.width="90%"}
+```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
 
 DMC_Pb_plot <- plot_dmc(davis_Pb, models_Pb, value_label = "Pb load")
 DMC_Pb_plot
@@ -1721,7 +1756,7 @@ bp_Pb <- breakpoint_analysis_by_site(Pb_fit$df)
 bp_Pb
 ```
 
-```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+```{r,  fig.width=7, fig.height=2.25, out.width="85%", include=F}
 
 DMCres_Pb_plot <- plot_cumul_resid(
   resid_df   = Pb_resid,
@@ -1747,9 +1782,11 @@ inference_Sr <- infer_slopes_vs1(models_Sr)
 inference_Sr
 ```
 
-```{r,  fig.width=9, fig.height=5, out.width="90%"}
+```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
 
-DMC_Sr_plot <- plot_dmc(davis_Sr, models_Sr, value_label = "Sr load")
+DMC_Sr_plot <- plot_dmc(davis_Sr, models_Sr, 
+                        flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
+                       value_label = expression(Norm.~Sr~(mg~L^-1)))
 DMC_Sr_plot
 ```
 
@@ -1759,7 +1796,7 @@ bp_Sr <- breakpoint_analysis_by_site(Sr_fit$df)
 bp_Sr
 ```
 
-```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
+```{r,  fig.width=7, fig.height=2.25, out.width="85%", include=F}
 
 DMSres_Sr_plot <- plot_cumul_resid(
   resid_df   = Sr_resid,
@@ -1785,7 +1822,7 @@ inference_B <- infer_slopes_vs1(models_B)
 inference_B
 ```
 
-```{r,  fig.width=9, fig.height=5, out.width="90%"}
+```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
 
 DMC_B_plot <- plot_dmc(davis_B, models_B, value_label = "B load")
 DMC_B_plot
@@ -1795,18 +1832,6 @@ DMC_B_plot
 B_resid <- calc_cumul_resid(B_fit$df, B_fit$models)
 bp_B <- breakpoint_analysis_by_site(B_fit$df)
 bp_B
-```
-
-```{r,  fig.width=7, fig.height=2.25, out.width="85%"}
-
-DMBes_B_plot <- plot_cumul_resid(
-  resid_df   = B_resid,
-  bp_tbl     = bp_B,
-  site_colors = site_colors_OL,
-  ylab = "C residuals B ~ Q"
-)
-
-DMBes_B_plot
 ```
 
 
@@ -1822,7 +1847,7 @@ inZnrence_Zn <- infer_slopes_vs1(models_Zn)
 inZnrence_Zn
 ```
 
-```{r,  fig.width=9, fig.height=5, out.width="90%"}
+```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
 DMC_Zn_plot <- plot_dmc(davis_Zn, models_Zn, value_label = "Zn load")
 DMC_Zn_plot
 ```
@@ -1834,7 +1859,7 @@ bp_Zn
 ```
 
 
-```{r, fig.width=7, fig.height=2.25, out.width="85%"}
+```{r, fig.width=7, fig.height=2.25, out.width="85%", include=F}
 
 DMCres_Zn_plot <- plot_cumul_resid(
   resid_df   = Zn_resid,
@@ -1849,7 +1874,7 @@ DMCres_Zn_plot
 
 ####
 
-```{r,  fig.width=10, fig.height=8, out.width="85%", echo=F}
+```{r,  fig.width=10, fig.height=11, out.width="85%", echo=F}
 
 DMC_grid_nuts <- ggarrange( 
   DMC_TSS_plot,
@@ -1857,6 +1882,9 @@ DMC_grid_nuts <- ggarrange(
   DMC_TDN_plot,
   DMC_PO4_plot,
   common.legend = T,
+  labels = c("a", "b", "c", "d"),
+  label.x = 0.1,  
+  label.y = 0.98,
   ncol=1,
   nrow=4)
 
@@ -1865,7 +1893,7 @@ DMC_grid_nuts
 
 ```{r, echo=FALSE, include =F}
 
-# ggsave(plot = DMC_grid_nuts, filename = paste("./Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_nuts_grid_plot.png",sep=""),width=14,height=12,dpi=300)
+# ggsave(plot = DMC_grid_nuts, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_nuts_grid_plot.png",sep=""),width=12,height=10,dpi=300)
 
 ```
 
@@ -1893,14 +1921,35 @@ DMC_res_grid_nuts
 
 #### 
 
-```{r,  fig.width=11, fig.height=25, out.width="95%", echo=FALSE}
+```{r,  fig.width=12, fig.height=15, out.width="95%", echo=FALSE}
+
+DMC_grid_metals_SI <- 
+  ggarrange( 
+  DMC_Al_plot,
+  DMC_As_plot,
+  #DMC_B_plot,
+  DMC_Ba_plot,
+  DMC_Ca_plot,
+  #DMC_Cr_plot, 
+  DMC_Fe_plot,
+  DMC_Mn_plot,
+  #DMC_Pb_plot,
+  DMC_Sr_plot,
+  #DMC_Zn_plot,
+  common.legend = T,
+  ncol=1,
+  nrow=7)
+
+# DMC_grid_metals_SI
+
+
 
 DMC_grid_metals <- 
   ggarrange( 
   DMC_Al_plot,
-  #DMC_As_plot,
+  DMC_As_plot,
   #DMC_B_plot,
-  #DMC_Ba_plot,
+  DMC_Ba_plot,
   #DMC_Ca_plot,
   #DMC_Cr_plot, 
   DMC_Fe_plot,
@@ -1909,8 +1958,11 @@ DMC_grid_metals <-
   #DMC_Sr_plot,
   #DMC_Zn_plot,
   common.legend = T,
+  labels = c("a", "b", "c", "d", "e"),
+  label.x = 0.07,  
+  label.y = 0.95,
   ncol=1,
-  nrow=3)
+  nrow=5)
 
 DMC_grid_metals
 
@@ -1920,10 +1972,10 @@ DMC_grid_metals
 
 ```{r, echo=FALSE, include =F}
 
-# ggsave(plot = DMC_grid_metals, filename = paste("./Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_metals_grid_plot.png",sep=""),width=14,height=8,dpi=300)
+# ggsave(plot = DMC_grid_metals_SI, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_metals_grid_plot_SI.png",sep=""),width=13,height=14.75,dpi=300)
 
 
-# ggsave(plot = DMC_grid_metals, filename = paste("./Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_metals_grid_plot_SI.png",sep=""),width=14,height=20,dpi=300)
+# ggsave(plot = DMC_grid_metals, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_metals_grid_plot.png",sep=""),width=11,height=12,dpi=300)
 
 ```
 
@@ -1958,1520 +2010,19 @@ DMCres_grid_metals
 
 ```
 
-
-### ============================================================================
-
-## IV.  GLMs 
-
-### ============================================================================
-
-
 ```{r, echo=FALSE, include =F}
-
-vars <- c("TSS","lag_C_PPT","tsf","flow_filled","temp","DO","EC","pH","site")
-
-## merge hydro and solute data 
-df_model <- df_WQ_plot %>%
-  left_join(new_df_hydro, by =c("site", "date")) %>%
-  filter(site!="ophir") %>%
-  select(all_of(vars)) %>%
-  tidyr::drop_na() %>%
-    mutate(catchment = case_when(
-    site == "winters_usgs" ~ "winters",
-    site == "winters_up" ~ "winters",
-    site == "browns" ~ "browns", 
-    site == "browns_sub" ~ "browns"))
-
-
-head(df_model)
+## note for final .md render on git
+# output:
+#   github_document:
+#     toc: true
+#     toc_depth: 3
+#     html_preview: false
+# always_allow_html: true
+# editor_options: 
+#   markdown: 
+#     wrap: 72
 
 ```
-
-
-```{r, echo=FALSE, include =T}
-library(PerformanceAnalytics)
-
-covar_check <- df_model[,c(1:8)]
-
-chart.Correlation(covar_check, histogram=TRUE, pch=19)
-```
-
-
-### build glm
-
-```{r, echo=FALSE, include =F}
-library(brms)
-
-library(lme4) # fit GLMM in frequentist framework
-library(lmerTest)
-```
-
-#### glm start for fast model builds
-
-### PPT model 
-
-```{r, echo=FALSE, include =T}
-
-ppt_mod <- lmer(TSS~ scale(lag_C_PPT) + scale(tsf) + scale(lag_C_PPT*tsf) + (1 | catchment/site), data=df_model)
-summary(ppt_mod)
-
-ppt_mod.1 <- lmer(TSS~ scale(lag_C_PPT)+ scale(tsf) + (1 | catchment/site), data=df_model)
-summary(ppt_mod.1)
-
-ppt_mod.2 <- lmer(TSS~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) + (1 | catchment/site), data=df_model)
-summary(ppt_mod.2)
-
-ppt_mod.3 <- lmer(TSS~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled*tsf) + (1 | catchment/site), data=df_model)
-summary(ppt_mod.3)
-
-ppt_mod.4 <- lmer(TSS~ scale(lag_C_PPT) + (1 | catchment/site), data=df_model)
-summary(ppt_mod.4)
-
-ppt_mod.5 <- lmer(TSS~ scale(lag_C_PPT) + scale(flow_filled)+ (1 | catchment/site), data=df_model)
-summary(ppt_mod.5)
-
-AIC(ppt_mod, ppt_mod.1, ppt_mod.2, ppt_mod.3, ppt_mod.4, ppt_mod.5)
-
-library(MuMIn)
-model.sel(ppt_mod, ppt_mod.1, ppt_mod.2, ppt_mod.3, ppt_mod.4, ppt_mod.5, rank = "AICc")
-
-## best model :ppt_mod.2
-```
-
-### move forward with ppt_mod.2
-
-- ΔAICc difference is trivial from ppt_mod.2 to ppt_mod
-
-- interaction unsupported and more complex in ppt_mod
-
-- strong collinearity (correlation = −0.871) and in ppt_mod
-
-
-
-
-### global model of all water quality parameters (
-
-```{r, echo=FALSE, include =T}
-
-glob_mod <- lmer(TSS~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
-                   scale(temp) + scale(DO) +scale(EC) +scale(pH) +
-                   (1 | catchment/site), data=df_model)
-summary(glob_mod)
-
-glob_mod.1 <- lmer(TSS~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
-                    scale(DO) +scale(EC) +scale(pH) +
-                   (1 | catchment/site), data=df_model)
-summary(glob_mod.1)
-
-
-glob_mod.2 <- lmer(TSS~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
-                    scale(DO)+ scale(pH) +
-                   (1 | catchment/site), data=df_model)
-summary(glob_mod.2)
-
-glob_mod.3 <- lmer(TSS~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
-                    scale(pH) +
-                   (1 | catchment/site), data=df_model)
-summary(glob_mod.3)
-
-
-library(MuMIn)
-model.sel(glob_mod, glob_mod.1, glob_mod.2, glob_mod.3, rank = "AICc")
-
-## best model :glob_mod
-```
-
-
-### Null model time + space
-
-```{r, echo=FALSE, include =T}
-
-null_mod <- lmer(TSS~ scale(tsf) + 
-                   (1 | catchment/site), data=df_model)
-summary(null_mod)
-
-model.sel(null_mod, ppt_mod.2, glob_mod,  rank = "AICc")
-
-## best model :glob_mod
-```
-
-## set up bayes linear model for more certainty around effect sizes 
-
-```{r, echo=FALSE, include =T}
- 
-hist(df_model$TSS)
-
-```
-Strong skew - log normal distribution 
-
-
-```{r}
-
-library(brms)
-
-mu0 <- log(mean(df_model$TSS, na.rm = TRUE))
-
-library(brms)
-
-priors_logn <- c(
-  set_prior(sprintf("normal(%f, 2)", mu0), class = "Intercept"),
-  set_prior("normal(0, 1)", class = "b"),
-  set_prior("exponential(1)", class = "sd"),
-  set_prior("exponential(1)", class = "sigma")
-)
-
-priors_logn
-
-TSS_m_logn <- brm(
-  TSS ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
-    catchment + (1 | catchment:site),
-  data   = df_model,
-  family = lognormal(),
-  prior  = priors_logn,
-  chains = 3, cores = 3, iter = 4000,
-  warmup = 2000, thin = 1
-
-)
-```
-
-#### TSS model fit 
-
-```{r, echo=FALSE, include =T}
-
-pp_check(TSS_m_logn)
-pp_check(TSS_m_logn, type = "hist")
-pp_check(TSS_m_logn, type = "scatter_avg")
-
-
-loo_mod <- loo(TSS_m_logn)
-print(loo_mod)
-
-
-bayes_R2(TSS_m_logn)
-
-```
-
-```{r, echo=FALSE, include =T}
-
-post_TSS <- brms::posterior_summary(TSS_m_logn, pars = "^b_")
-post_TSS
-```
-
-### Extract effects + 95% CI cleanly
-
-```{r}
-library(tidybayes)
-library(dplyr)
-
-effects_df_TSS <- data.frame(
-  term = gsub("^b_", "", rownames(post)),
-  estimate = post_TSS[, "Estimate"],
-  l95 = post_TSS[, "Q2.5"],
-  u95 = post_TSS[, "Q97.5"]
-)
-
-# exponentiated (multiplicative effects on TSS)
-effects_df_TSS$estimate_exp <- round(exp(effects_df_TSS$estimate),2)
-effects_df_TSS$l95_exp <- round(exp(effects_df_TSS$l95),2)
-effects_df_TSS$u95_exp <- round(exp(effects_df_TSS$u95),2)
-
-effects_df_TSS
-
-
-library(ggplot2)
-
-effects_df_TSS %>%
-  filter(term != "Intercept") %>%
-  ggplot(aes(x = (estimate_exp), y = term)) +
-  geom_point() +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.1) +
-  geom_vline(xintercept = 1, linetype = 2) +
-  labs(x = NULL, y = "Drivers of TSS (exp(beta))") +
-  theme_classic()
-
-
-bayes_R2 <-round(bayes_R2(TSS_m_logn),2)
-
-effects_TSS_plot <- effects_df_TSS%>%
-filter(term != "Intercept" &  term != "catchmentwinters") %>%
-  mutate(analyte = "TSS",
-         bayes_R2 = 0.41)
-
-```
-
-Exponentiated the coefficients due to the log distribution for effects < 1 are not ecologically meaningful. 
-
-
-### DOC dynamics
-
-```{r, echo=FALSE, include =T}
- 
-vars <- c("DOC_QC","lag_C_PPT","tsf","flow_filled","temp","DO","EC","pH","site")
-
-## merge hydro and solute data 
-df_model <- df_WQ_plot %>%
-  left_join(new_df_hydro, by =c("site", "date")) %>%
-  filter(site!="ophir") %>%
-  select(all_of(vars)) %>%
-  tidyr::drop_na() %>%
-    mutate(catchment = case_when(
-    site == "winters_usgs" ~ "winters",
-    site == "winters_up" ~ "winters",
-    site == "browns" ~ "browns", 
-    site == "browns_sub" ~ "browns"))
-
-
-
-hist(df_model$DOC_QC)
-
-```
-
-Some skew 
-
-```{r, echo=FALSE, include =T}
-
-
-library(brms)
-
-mu0 <- round(log(mean(df_model$DOC_QC, na.rm = TRUE)),2)
-
-
-priors_logn <- c(
-  set_prior(sprintf("normal(%f, 2)", mu0), class = "Intercept"),
-  set_prior("normal(0, 1)", class = "b"),
-  set_prior("exponential(1)", class = "sd"),
-  set_prior("exponential(1)", class = "sigma")
-)
-
-priors_logn
-
-DOC_m_logn <- brm(
-  DOC_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
-    catchment + (1 | catchment:site),
-  data   = df_model,
-  family = lognormal(),
-  prior  = priors_logn,
-  chains = 3, cores = 3, iter = 4000,
-  warmup = 2000, thin = 1
-
-)
-
-plot(DOC_m_logn)
-
-```
-
-#### DOC model fit 
-
-```{r, echo=FALSE, include =T}
-
-pp_check(DOC_m_logn)
-pp_check(DOC_m_logn, type = "hist")
-pp_check(DOC_m_logn, type = "scatter_avg")
-
-
-loo_mod <- loo(DOC_m_logn)
-print(loo_mod)
-
-
-bayes_R2(DOC_m_logn)
-
-```
-
-
-### Extract effects + 95% CI cleanly
-
-```{r, echo=FALSE, include =T}
-
-library(tidybayes)
-library(dplyr)
-
-post_DOC <- brms::posterior_summary(DOC_m_logn, pars = "^b_")
-post_DOC
-
-effects_df_DOC <- data.frame(
-  term = gsub("^b_", "", rownames(post)),
-  estimate = post_DOC[, "Estimate"],
-  l95 = post_DOC[, "Q2.5"],
-  u95 = post_DOC[, "Q97.5"]
-)
-
-# exponentiated (multiplicative effects on DOC)
-effects_df_DOC$estimate_exp <- round(exp(effects_df_DOC$estimate),2)
-effects_df_DOC$l95_exp <- round(exp(effects_df_DOC$l95),2)
-effects_df_DOC$u95_exp <- round(exp(effects_df_DOC$u95),2)
-
-effects_df_DOC
-
-
-library(ggplot2)
-
-effects_df_DOC %>%
-  filter(term != "Intercept") %>%
-  ggplot(aes(x = (estimate_exp), y = term)) +
-  geom_point() +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.1) +
-  geom_vline(xintercept = 1, linetype = 2) +
-  labs(x = NULL, y = "Drivers of DOC (exp(beta))") +
-  theme_classic()
-
-
-bayes_R2 <-round(bayes_R2(DOC_m_logn),2)
-
-effects_DOC_plot <- effects_df_DOC%>%
-filter(term != "Intercept" &  term != "catchmentwinters") %>%
-  mutate(analyte = "DOC",
-         bayes_R2 = 0.14)
-
-```
-
-
-
-
-### TDN dynamics
-
-```{r, echo=FALSE, include =T}
- 
-vars <- c("TDN_QC","lag_C_PPT","tsf","flow_filled","temp","DO","EC","pH","site")
-
-## merge hydro and solute data 
-df_model <- df_WQ_plot %>%
-  left_join(new_df_hydro, by =c("site", "date")) %>%
-  filter(site!="ophir") %>%
-  select(all_of(vars)) %>%
-  tidyr::drop_na() %>%
-    mutate(catchment = case_when(
-    site == "winters_usgs" ~ "winters",
-    site == "winters_up" ~ "winters",
-    site == "browns" ~ "browns", 
-    site == "browns_sub" ~ "browns"))
-
-hist(df_model$TDN_QC)
-
-```
-
-Some skew 
-
-```{r, echo=FALSE, include =T}
-
-
-library(brms)
-
-mu0 <- round(log(mean(df_model$TDN_QC, na.rm = TRUE)),2)
-
-
-priors_logn <- c(
-  set_prior(sprintf("normal(%f, 2)", mu0), class = "Intercept"),
-  set_prior("normal(0, 1)", class = "b"),
-  set_prior("exponential(1)", class = "sd"),
-  set_prior("exponential(1)", class = "sigma")
-)
-
-priors_logn
-
-TDN_m_logn <- brm(
-  TDN_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
-    catchment + (1 | catchment:site),
-  data   = df_model,
-  family = lognormal(),
-  prior  = priors_logn,
-  chains = 3, cores = 3, iter = 4000,
-  warmup = 2000, thin = 1
-
-)
-
-plot(TDN_m_logn)
-
-```
-
-#### TDN model fit 
-
-```{r, echo=FALSE, include =T}
-
-pp_check(TDN_m_logn)
-pp_check(TDN_m_logn, type = "hist")
-pp_check(TDN_m_logn, type = "scatter_avg")
-
-
-loo_mod <- loo(TDN_m_logn)
-print(loo_mod)
-
-
-bayes_R2(TDN_m_logn)
-
-```
-
-
-### Extract effects + 95% CI cleanly
-
-```{r, echo=FALSE, include =T}
-
-library(tidybayes)
-library(dplyr)
-
-post_TDN <- brms::posterior_summary(TDN_m_logn, pars = "^b_")
-post_TDN
-
-effects_df_TDN <- data.frame(
-  term = gsub("^b_", "", rownames(post)),
-  estimate = post_TDN[, "Estimate"],
-  l95 = post_TDN[, "Q2.5"],
-  u95 = post_TDN[, "Q97.5"]
-)
-
-# exponentiated (multiplicative effects on TDN)
-effects_df_TDN$estimate_exp <- round(exp(effects_df_TDN$estimate),2)
-effects_df_TDN$l95_exp <- round(exp(effects_df_TDN$l95),2)
-effects_df_TDN$u95_exp <- round(exp(effects_df_TDN$u95),2)
-
-effects_df_TDN
-
-
-library(ggplot2)
-
-effects_df_TDN %>%
-  filter(term != "Intercept") %>%
-  ggplot(aes(x = (estimate_exp), y = term)) +
-  geom_point() +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.1) +
-  geom_vline(xintercept = 1, linetype = 2) +
-  labs(x = NULL, y = "Drivers of TDN (exp(beta))") +
-  theme_classic()
-
-bayes_R2 <-round(bayes_R2(TDN_m_logn),2)
-
-effects_TDN_plot <- effects_df_TDN%>%
-filter(term != "Intercept" &  term != "catchmentwinters") %>%
-  mutate(analyte = "TDN",
-         bayes_R2 = 0.31)
-
-```
-
-
-
-
-
-### PO4.P dynamics
-
-```{r, echo=FALSE, include =T}
- 
-vars <- c("PO4.P_QC","lag_C_PPT","tsf","flow_filled","temp","DO","EC","pH","site")
-
-## merge hydro and solute data 
-df_model <- df_WQ_plot %>%
-  left_join(new_df_hydro, by =c("site", "date")) %>%
-  filter(site!="ophir") %>%
-  select(all_of(vars)) %>%
-  tidyr::drop_na() %>%
-    mutate(catchment = case_when(
-    site == "winters_usgs" ~ "winters",
-    site == "winters_up" ~ "winters",
-    site == "browns" ~ "browns", 
-    site == "browns_sub" ~ "browns"))
-
-
-
-hist(df_model$PO4.P_QC)
-
-```
-
-Some skew 
-
-```{r, echo=FALSE, include =T}
-
-
-library(brms)
-
-mu0 <- round(log(mean(df_model$PO4.P_QC, na.rm = TRUE)),2)
-
-
-priors_logn <- c(
-  set_prior(sprintf("normal(%f, 2)", mu0), class = "Intercept"),
-  set_prior("normal(0, 1)", class = "b"),
-  set_prior("exponential(1)", class = "sd"),
-  set_prior("exponential(1)", class = "sigma")
-)
-
-priors_logn
-
-PO4.P_m_logn <- brm(
-  PO4.P_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
-    catchment + (1 | catchment:site),
-  data   = df_model,
-  family = lognormal(),
-  prior  = priors_logn,
-  chains = 3, cores = 3, iter = 4000,
-  warmup = 2000, thin = 1
-
-)
-
-plot(PO4.P_m_logn)
-
-```
-
-#### PO4.P model fit 
-
-```{r, echo=FALSE, include =T}
-
-pp_check(PO4.P_m_logn)
-pp_check(PO4.P_m_logn, type = "hist")
-pp_check(PO4.P_m_logn, type = "scatter_avg")
-
-
-loo_mod <- loo(PO4.P_m_logn)
-print(loo_mod)
-
-
-bayes_R2(PO4.P_m_logn)
-
-```
-
-
-### Extract effects + 95% CI cleanly
-
-```{r, echo=FALSE, include =T}
-
-library(tidybayes)
-library(dplyr)
-
-post_PO4.P <- brms::posterior_summary(PO4.P_m_logn, pars = "^b_")
-post_PO4.P
-
-effects_df_PO4.P <- data.frame(
-  term = gsub("^b_", "", rownames(post)),
-  estimate = post_PO4.P[, "Estimate"],
-  l95 = post_PO4.P[, "Q2.5"],
-  u95 = post_PO4.P[, "Q97.5"]
-)
-
-# exponentiated (multiplicative effects on PO4.P)
-effects_df_PO4.P$estimate_exp <- round(exp(effects_df_PO4.P$estimate),2)
-effects_df_PO4.P$l95_exp <- round(exp(effects_df_PO4.P$l95),2)
-effects_df_PO4.P$u95_exp <- round(exp(effects_df_PO4.P$u95),2)
-
-effects_df_PO4.P
-
-
-library(ggplot2)
-
-effects_df_PO4.P %>%
-  filter(term != "Intercept") %>%
-  ggplot(aes(x = (estimate_exp), y = term)) +
-  geom_point() +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.1) +
-  geom_vline(xintercept = 1, linetype = 2) +
-  labs(x = NULL, y = "Drivers of PO4.P (exp(beta))") +
-  theme_classic()
-
-
-bayes_R2 <-round(bayes_R2(PO4.P_m_logn),2)
-
-effects_PO4_plot <- effects_df_PO4.P%>%
-filter(term != "Intercept" &  term != "catchmentwinters") %>%
-  mutate(analyte = "PO4",
-         bayes_R2 = 0.13)
-
-```
-
-
-### metals ?
-
-
-### Al dynamics
-
-```{r, echo=FALSE, include =T}
- 
-vars <- c("Al_QC","lag_C_PPT","tsf","flow_filled","temp","DO","EC","pH","site")
-
-## merge hydro and solute data 
-df_model <- df_WQ_plot %>%
-  left_join(new_df_hydro, by =c("site", "date")) %>%
-  filter(site!="ophir") %>%
-  select(all_of(vars)) %>%
-  tidyr::drop_na() %>%
-    mutate(catchment = case_when(
-    site == "winters_usgs" ~ "winters",
-    site == "winters_up" ~ "winters",
-    site == "browns" ~ "browns", 
-    site == "browns_sub" ~ "browns"))
-
-
-
-hist(df_model$Al_QC)
-
-```
-
-Some skew 
-
-```{r, echo=FALSE, include =T}
-
-
-library(brms)
-
-mu0 <- round(log(mean(df_model$Al_QC, na.rm = TRUE)),2)
-
-
-priors_logn <- c(
-  set_prior(sprintf("normal(%f, 2)", mu0), class = "Intercept"),
-  set_prior("normal(0, 1)", class = "b"),
-  set_prior("exponential(1)", class = "sd"),
-  set_prior("exponential(1)", class = "sigma")
-)
-
-priors_logn
-
-Al_m_logn <- brm(
-  Al_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
-    catchment + (1 | catchment:site),
-  data   = df_model,
-  family = lognormal(),
-  prior  = priors_logn,
-  chains = 3, cores = 3, iter = 4000,
-  warmup = 2000, thin = 1
-
-)
-
-plot(Al_m_logn)
-
-```
-
-#### Al model fit 
-
-```{r, echo=FALSE, include =T}
-
-pp_check(Al_m_logn)
-pp_check(Al_m_logn, type = "hist")
-pp_check(Al_m_logn, type = "scatter_avg")
-
-
-loo_mod <- loo(Al_m_logn)
-print(loo_mod)
-
-
-bayes_R2(Al_m_logn)
-
-```
-
-
-### Extract effects + 95% CI cleanly
-
-```{r, echo=FALSE, include =T}
-
-library(tidybayes)
-library(dplyr)
-
-post_Al <- brms::posterior_summary(Al_m_logn, pars = "^b_")
-post_Al
-
-effects_df_Al <- data.frame(
-  term = gsub("^b_", "", rownames(post)),
-  estimate = post_Al[, "Estimate"],
-  l95 = post_Al[, "Q2.5"],
-  u95 = post_Al[, "Q97.5"]
-)
-
-# exponentiated (multiplicative effects on Al)
-effects_df_Al$estimate_exp <- round(exp(effects_df_Al$estimate),2)
-effects_df_Al$l95_exp <- round(exp(effects_df_Al$l95),2)
-effects_df_Al$u95_exp <- round(exp(effects_df_Al$u95),2)
-
-effects_df_Al
-
-
-library(ggplot2)
-
-effects_df_Al %>%
-  filter(term != "Intercept") %>%
-  ggplot(aes(x = (estimate_exp), y = term)) +
-  geom_point() +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.1) +
-  geom_vline(xintercept = 1, linetype = 2) +
-  labs(x = NULL, y = "Drivers of Al (exp(beta))") +
-  theme_classic()
-
-
-bayes_R2 <-round(bayes_R2(Al_m_logn),2)
-
-effects_Al_plot <- effects_df_Al%>%
-filter(term != "Intercept" &  term != "catchmentwinters") %>%
-  mutate(analyte = "Al",
-         bayes_R2 = 0.25)
-
-```
-
-
-
-### Ba dynamics
-
-```{r, echo=FALSE, include =T}
-
- 
-vars <- c("Ba_QC","lag_C_PPT","tsf","flow_filled","temp","DO","EC","pH","site")
-
-## merge hydro and solute data 
-df_model <- df_WQ_plot %>%
-  left_join(new_df_hydro, by =c("site", "date")) %>%
-  filter(site!="ophir") %>%
-  select(all_of(vars)) %>%
-  tidyr::drop_na() %>%
-    mutate(catchment = case_when(
-    site == "winters_usgs" ~ "winters",
-    site == "winters_up" ~ "winters",
-    site == "browns" ~ "browns", 
-    site == "browns_sub" ~ "browns"))
-
-hist(df_model$Ba_QC)
-
-```
-
-Some skew 
-
-```{r, echo=FALSE, include =T}
-
-
-library(brms)
-
-mu0 <- round(log(mean(df_model$Ba_QC, na.rm = TRUE)),2)
-
-
-priors_logn <- c(
-  set_prior(sprintf("normal(%f, 2)", mu0), class = "Intercept"),
-  set_prior("normal(0, 1)", class = "b"),
-  set_prior("exponential(1)", class = "sd"),
-  set_prior("exponential(1)", class = "sigma")
-)
-
-priors_logn
-
-Ba_m_logn <- brm(
-  Ba_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
-    catchment + (1 | catchment:site),
-  data   = df_model,
-  family = lognormal(),
-  prior  = priors_logn,
-  chains = 3, cores = 3, iter = 4000,
-  warmup = 2000, thin = 1
-
-)
-
-plot(Ba_m_logn)
-
-```
-
-#### Ba model fit 
-
-```{r, echo=FALSE, include =T}
-
-pp_check(Ba_m_logn)
-pp_check(Ba_m_logn, type = "hist")
-pp_check(Ba_m_logn, type = "scatter_avg")
-
-
-loo_mod <- loo(Ba_m_logn)
-print(loo_mod)
-
-
-bayes_R2(Ba_m_logn)
-
-```
-
-
-### Extract effects + 95% CI cleanly
-
-```{r, echo=FALSE, include =T}
-
-library(tidybayes)
-library(dplyr)
-
-post_Ba <- brms::posterior_summary(Ba_m_logn, pars = "^b_")
-post_Ba
-
-effects_df_Ba <- data.frame(
-  term = gsub("^b_", "", rownames(post)),
-  estimate = post_Ba[, "Estimate"],
-  l95 = post_Ba[, "Q2.5"],
-  u95 = post_Ba[, "Q97.5"]
-)
-
-# exponentiated (multiplicative effects on Al)
-effects_df_Ba$estimate_exp <- round(exp(effects_df_Ba$estimate),2)
-effects_df_Ba$l95_exp <- round(exp(effects_df_Ba$l95),2)
-effects_df_Ba$u95_exp <- round(exp(effects_df_Ba$u95),2)
-
-effects_df_Ba
-
-
-library(ggplot2)
-
-effects_df_Ba %>%
-  filter(term != "Intercept") %>%
-  ggplot(aes(x = (estimate_exp), y = term)) +
-  geom_point() +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.1) +
-  geom_vline(xintercept = 1, linetype = 2) +
-  labs(x = NULL, y = "Drivers of Al (exp(beta))") +
-  theme_classic()
-
-bayes_R2 <-round(bayes_R2(Ba_m_logn),2)
-
-effects_Ba_plot <- effects_df_Ba%>%
-filter(term != "Intercept" &  term != "catchmentwinters") %>%
-  mutate(analyte = "Ba",
-         bayes_R2 = 0.61)
-
-```
-
-
-
-
-
-### Ca dynamics
-
-```{r, echo=FALSE, include =T}
-
- 
-vars <- c("Ca_QC","lag_C_PPT","tsf","flow_filled","temp","DO","EC","pH","site")
-
-## merge hydro and solute data 
-df_model <- df_WQ_plot %>%
-  left_join(new_df_hydro, by =c("site", "date")) %>%
-  filter(site!="ophir") %>%
-  select(all_of(vars)) %>%
-  tidyr::drop_na() %>%
-    mutate(catchment = case_when(
-    site == "winters_usgs" ~ "winters",
-    site == "winters_up" ~ "winters",
-    site == "browns" ~ "browns", 
-    site == "browns_sub" ~ "browns"))
-
-hist(df_model$Ca_QC)
-
-```
-
-Some skew 
-
-```{r, echo=FALSE, include =T}
-
-
-library(brms)
-
-mu0 <- round(log(mean(df_model$Ca_QC, na.rm = TRUE)),2)
-
-
-priors_logn <- c(
-  set_prior(sprintf("normal(%f, 2)", mu0), class = "Intercept"),
-  set_prior("normal(0, 1)", class = "b"),
-  set_prior("exponential(1)", class = "sd"),
-  set_prior("exponential(1)", class = "sigma")
-)
-
-priors_logn
-
-Ca_m_logn <- brm(
-  Ca_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
-    catchment + (1 | catchment:site),
-  data   = df_model,
-  family = lognormal(),
-  prior  = priors_logn,
-  chains = 3, cores = 3, iter = 4000,
-  warmup = 2000, thin = 1
-
-)
-
-plot(Ca_m_logn)
-
-```
-
-#### Ca model fit 
-
-```{r, echo=FALSE, include =T}
-
-pp_check(Ca_m_logn)
-pp_check(Ca_m_logn, type = "hist")
-pp_check(Ca_m_logn, type = "scatter_avg")
-
-
-loo_mod <- loo(Ca_m_logn)
-print(loo_mod)
-
-
-bayes_R2(Ca_m_logn)
-
-```
-
-
-### Extract effects + 95% CI cleanly
-
-```{r, echo=FALSE, include =T}
-
-library(dplyr)
-
-post_Ca <- brms::posterior_summary(Ca_m_logn, pars = "^b_")
-post_Ca
-
-effects_df_Ca <- data.frame(
-  term = gsub("^b_", "", rownames(post)),
-  estimate = post_Ca[, "Estimate"],
-  l95 = post_Ca[, "Q2.5"],
-  u95 = post_Ca[, "Q97.5"]
-)
-
-# exponentiated (multiplicative effects on Al)
-effects_df_Ca$estimate_exp <- round(exp(effects_df_Ca$estimate),2)
-effects_df_Ca$l95_exp <- round(exp(effects_df_Ca$l95),2)
-effects_df_Ca$u95_exp <- round(exp(effects_df_Ca$u95),2)
-
-effects_df_Ca
-
-
-library(ggplot2)
-
-effects_df_Ca %>%
-  filter(term != "Intercept") %>%
-  ggplot(aes(x = (estimate_exp), y = term)) +
-  geom_point() +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.1) +
-  geom_vline(xintercept = 1, linetype = 2) +
-  labs(x = NULL, y = "Drivers of Al (exp(beta))") +
-  theme_classic()
-
-bayes_R2 <-round(bayes_R2(Ca_m_logn),2)
-
-effects_Ca_plot <- effects_df_Ca%>%
-filter(term != "Intercept" &  term != "catchmentwinters") %>%
-  mutate(analyte = "Ca",
-         bayes_R2 = 0.36)
-
-```
-
-
-
-
-### Fe dynamics
-
-```{r, echo=FALSE, include =T}
-
- 
-vars <- c("Fe_QC","lag_C_PPT","tsf","flow_filled","temp","DO","EC","pH","site")
-
-## merge hydro and solute data 
-df_model <- df_WQ_plot %>%
-  left_join(new_df_hydro, by =c("site", "date")) %>%
-  filter(site!="ophir") %>%
-  select(all_of(vars)) %>%
-  tidyr::drop_na() %>%
-    mutate(catchment = case_when(
-    site == "winters_usgs" ~ "winters",
-    site == "winters_up" ~ "winters",
-    site == "browns" ~ "browns", 
-    site == "browns_sub" ~ "browns"))
-
-
-
-hist(df_model$Fe_QC)
-
-```
-
-Some skew 
-
-```{r, echo=FALSE, include =T}
-
-
-library(brms)
-
-mu0 <- round(log(mean(df_model$Fe_QC, na.rm = TRUE)),2)
-
-
-priors_logn <- c(
-  set_prior(sprintf("normal(%f, 2)", mu0), class = "Intercept"),
-  set_prior("normal(0, 1)", class = "b"),
-  set_prior("exponential(1)", class = "sd"),
-  set_prior("exponential(1)", class = "sigma")
-)
-
-priors_logn
-
-Fe_m_logn <- brm(
-  Fe_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
-    catchment + (1 | catchment:site),
-  data   = df_model,
-  family = lognormal(),
-  prior  = priors_logn,
-  chains = 3, cores = 3, iter = 4000,
-  warmup = 2000, thin = 1
-
-)
-
-plot(Fe_m_logn)
-
-```
-
-#### Fe model fit 
-
-```{r, echo=FALSE, include =T}
-
-pp_check(Fe_m_logn)
-pp_check(Fe_m_logn, type = "hist")
-
-
-loo_mod <- loo(Fe_m_logn)
-print(loo_mod)
-
-
-bayes_R2(Fe_m_logn)
-
-```
-
-
-### Extract effects + 95% CI cleanly
-
-```{r, echo=FALSE, include =T}
-
-library(dplyr)
-
-post_Fe <- brms::posterior_summary(Fe_m_logn, pars = "^b_")
-post_Fe
-
-effects_df_Fe <- data.frame(
-  term = gsub("^b_", "", rownames(post)),
-  estimate = post_Fe[, "Estimate"],
-  l95 = post_Fe[, "Q2.5"],
-  u95 = post_Fe[, "Q97.5"]
-)
-
-effects_df_Fe$estimate_exp <- round(exp(effects_df_Fe$estimate),2)
-effects_df_Fe$l95_exp <- round(exp(effects_df_Fe$l95),2)
-effects_df_Fe$u95_exp <- round(exp(effects_df_Fe$u95),2)
-
-effects_df_Fe
-
-
-library(ggplot2)
-
-effects_df_Fe %>%
-  filter(term != "Intercept") %>%
-  ggplot(aes(x = (estimate_exp), y = term)) +
-  geom_point() +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.1) +
-  geom_vline(xintercept = 1, linetype = 2) +
-  labs(x = NULL, y = "Drivers of Al (exp(beta))") +
-  theme_classic()
-
-bayes_R2 <-round(bayes_R2(Fe_m_logn),2)
-
-effects_Fe_plot <- effects_df_Fe%>%
-filter(term != "Intercept" &  term != "catchmentwinters") %>%
-  mutate(analyte = "Fe",
-         bayes_R2 = 0.59)
-
-```
-
-
-
-
-
-
-### Mn dynamics
-
-```{r, echo=FALSE, include =T}
-
- 
-vars <- c("Mn_QC","lag_C_PPT","tsf","flow_filled","temp","DO","EC","pH","site")
-
-## merge hydro and solute data 
-df_model <- df_WQ_plot %>%
-  left_join(new_df_hydro, by =c("site", "date")) %>%
-  filter(site!="ophir") %>%
-  select(all_of(vars)) %>%
-  tidyr::drop_na() %>%
-    mutate(catchment = case_when(
-    site == "winters_usgs" ~ "winters",
-    site == "winters_up" ~ "winters",
-    site == "browns" ~ "browns", 
-    site == "browns_sub" ~ "browns"))
-
-
-
-hist(df_model$Mn_QC)
-
-```
-
-Some skew 
-
-```{r, echo=FALSE, include =T}
-
-
-library(brms)
-
-mu0 <- round(log(mean(df_model$Mn_QC, na.rm = TRUE)),2)
-
-
-priors_logn <- c(
-  set_prior(sprintf("normal(%f, 2)", mu0), class = "Intercept"),
-  set_prior("normal(0, 1)", class = "b"),
-  set_prior("exponential(1)", class = "sd"),
-  set_prior("exponential(1)", class = "sigma")
-)
-
-priors_logn
-
-Mn_m_logn <- brm(
-  Mn_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
-    catchment + (1 | catchment:site),
-  data   = df_model,
-  family = lognormal(),
-  prior  = priors_logn,
-  chains = 3, cores = 3, iter = 4000,
-  warmup = 2000, thin = 1
-
-)
-
-plot(Mn_m_logn)
-
-```
-
-#### Mn model fit 
-
-```{r, echo=FALSE, include =T}
-
-pp_check(Mn_m_logn)
-pp_check(Mn_m_logn, type = "hist")
-
-
-loo_mod <- loo(Mn_m_logn)
-print(loo_mod)
-
-
-bayes_R2(Mn_m_logn)
-
-```
-
-
-### Extract effects + 95% CI cleanly
-
-```{r, echo=FALSE, include =T}
-
-library(dplyr)
-
-post_Mn <- brms::posterior_summary(Mn_m_logn, pars = "^b_")
-post_Mn
-
-effects_df_Mn <- data.frame(
-  term = gsub("^b_", "", rownames(post)),
-  estimate = post_Mn[, "Estimate"],
-  l95 = post_Mn[, "Q2.5"],
-  u95 = post_Mn[, "Q97.5"]
-)
-
-effects_df_Mn$estimate_exp <- round(exp(effects_df_Mn$estimate),2)
-effects_df_Mn$l95_exp <- round(exp(effects_df_Mn$l95),2)
-effects_df_Mn$u95_exp <- round(exp(effects_df_Mn$u95),2)
-
-effects_df_Mn
-
-
-library(ggplot2)
-
-effects_df_Mn %>%
-  filter(term != "Intercept") %>%
-  ggplot(aes(x = (estimate_exp), y = term)) +
-  geom_point() +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.1) +
-  geom_vline(xintercept = 1, linetype = 2) +
-  labs(x = NULL, y = "Drivers of Al (exp(beta))") +
-  theme_classic()
-
-
-bayes_R2 <-round(bayes_R2(Mn_m_logn),2)
-
-effects_Mn_plot <- effects_df_Mn%>%
-filter(term != "Intercept" &  term != "catchmentwinters") %>%
-  mutate(analyte = "Mn",
-         bayes_R2 = 0.68)
-
-```
-
-
-
-
-
-### Sr dynamics
-
-```{r, echo=FALSE, include =T}
-
- 
-vars <- c("Sr_QC","lag_C_PPT","tsf","flow_filled","temp","DO","EC","pH","site")
-
-## merge hydro and solute data 
-df_model <- df_WQ_plot %>%
-  left_join(new_df_hydro, by =c("site", "date")) %>%
-  filter(site!="ophir") %>%
-  select(all_of(vars)) %>%
-  tidyr::drop_na() %>%
-    mutate(catchment = case_when(
-    site == "winters_usgs" ~ "winters",
-    site == "winters_up" ~ "winters",
-    site == "browns" ~ "browns", 
-    site == "browns_sub" ~ "browns"))
-
-
-
-hist(df_model$Sr_QC)
-
-```
-
-Some skew 
-
-```{r, echo=FALSE, include =T}
-
-
-library(brms)
-
-mu0 <- round(log(mean(df_model$Sr_QC, na.rm = TRUE)),2)
-
-
-priors_logn <- c(
-  set_prior(sprintf("normal(%f, 2)", mu0), class = "Intercept"),
-  set_prior("normal(0, 1)", class = "b"),
-  set_prior("exponential(1)", class = "sd"),
-  set_prior("exponential(1)", class = "sigma")
-)
-
-priors_logn
-
-Sr_m_logn <- brm(
-  Sr_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
-    catchment + (1 | catchment:site),
-  data   = df_model,
-  family = lognormal(),
-  prior  = priors_logn,
-  chains = 3, cores = 3, iter = 4000,
-  warmup = 2000, thin = 1
-
-)
-
-plot(Sr_m_logn)
-
-```
-
-#### Sr model fit 
-
-```{r, echo=FALSE, include =T}
-
-pp_check(Sr_m_logn)
-pp_check(Sr_m_logn, type = "hist")
-
-
-loo_mod <- loo(Sr_m_logn)
-print(loo_mod)
-
-
-bayes_R2(Sr_m_logn)
-
-
-```
-
-
-### Extract effects + 95% CI cleanly
-
-```{r, echo=FALSE, include =T}
-
-library(dplyr)
-
-post_Sr <- brms::posterior_summary(Sr_m_logn, pars = "^b_")
-post_Sr
-
-effects_df_Sr <- data.frame(
-  term = gsub("^b_", "", rownames(post)),
-  estimate = post_Sr[, "Estimate"],
-  l95 = post_Sr[, "Q2.5"],
-  u95 = post_Sr[, "Q97.5"]
-)
-
-effects_df_Sr$estimate_exp <- round(exp(effects_df_Sr$estimate),2)
-effects_df_Sr$l95_exp <- round(exp(effects_df_Sr$l95),2)
-effects_df_Sr$u95_exp <- round(exp(effects_df_Sr$u95),2)
-
-effects_df_Sr
-
-
-library(ggplot2)
-
-effects_df_Sr %>%
-  filter(term != "Intercept") %>%
-  ggplot(aes(x = (estimate_exp), y = term)) +
-  geom_point() +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.1) +
-  geom_vline(xintercept = 1, linetype = 2) +
-  labs(x = NULL, y = "Drivers of Al (exp(beta))") +
-  theme_classic()
-
-
-bayes_R2 <-round(bayes_R2(Sr_m_logn),2)
-
-effects_Sr_plot <- effects_df_Sr%>%
-filter(term != "Intercept" &  term != "catchmentwinters") %>%
-  mutate(analyte = "Sr",
-         bayes_R2 = 0.56)
-
-```
-
-```{r, echo=FALSE, include =T}
-
-coeff_plt_df <- rbind(effects_Sr_plot, effects_Fe_plot, effects_Mn_plot, effects_Ba_plot, effects_Ca_plot, effects_Al_plot, effects_PO4_plot, effects_TDN_plot, effects_DOC_plot, effects_TSS_plot)
-
-```
-
-```{r, fig.width=9, fig.height=9, out.width="90%"}
-
-library(dplyr)
-library(stringr)
-library(forcats)
-library(ggplot2)
-
-# 1) Order analytes by highest estimate_exp (within analyte)
-analyte_order <- coeff_plt_df %>%
-  group_by(analyte) %>%
-  summarise(max_est = max(estimate_exp, na.rm = TRUE), .groups = "drop") %>%
-  arrange(desc(max_est)) %>%
-  pull(analyte)
-
-# 2) Build a label row per analyte (for the y-axis "header")
-headers <- coeff_plt_df %>%
-  distinct(analyte, bayes_R2) %>%
-  mutate(
-    term = NA_character_,
-    estimate_exp = NA_real_,
-    l95_exp = NA_real_,
-    u95_exp = NA_real_,
-    # y label: analyte + bayes R2
-    y_lab = sprintf("%s (R² = %.2f)", analyte, bayes_R2),
-    is_header = TRUE
-  )
-
-# 3) Build term rows (indented)
-terms <- coeff_plt_df %>%
-  mutate(
-    # nice-ish term names (edit as you like)
-    term_nice = recode(term,
-      "scalelag_C_PPT"    = "Lagged PPT (z)",
-      "scaletsf"          = "TSF (z)",
-      "scaleflow_filled"  = "Flow (z)",
-      .default = term
-    ),
-    y_lab = paste0("   ", term_nice),
-    is_header = FALSE
-  )
-
-# 4) Combine headers + terms, and order within analyte
-plot_df <- bind_rows(headers, terms) %>%
-  mutate(
-    analyte = factor(analyte, levels = analyte_order)
-  ) %>%
-  arrange(analyte, desc(is_header), desc(estimate_exp)) %>%
-  group_by(analyte) %>%
-  mutate(row_in_analyte = row_number()) %>%
-  ungroup() %>%
-  # create a unique ordered y factor (keeps headers above their terms)
-  mutate(y = factor(paste(analyte, row_in_analyte, y_lab, sep = "___"),
-                    levels = unique(paste(analyte, row_in_analyte, y_lab, sep = "___"))),
-         y_text = y_lab)
-
-# 5) Plot
-ggplot(plot_df, aes(x = estimate_exp, y = y)) +
-  geom_vline(xintercept = 1, linetype = 2) +
-  geom_errorbarh(
-    data = subset(plot_df, !is_header),
-    aes(xmin = l95_exp, xmax = u95_exp),
-    height = 0.25
-  ) +
-  geom_point(
-    data = subset(plot_df, !is_header),
-    size = 2
-  ) +
-  scale_y_discrete(labels = plot_df$y_text) +
-  scale_x_log10() +  # OPTIONAL: log scale is often nice for multiplicative effects
-  labs(
-    x = "Multiplicative effect on response (exp(beta))",
-    y = NULL
-  ) +
-  theme_bw() +
-  theme(
-    axis.text.y = element_text(size = 10),
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor = element_blank()
-  )
-
-
-```
-
-
-```{r, fig.width=9, fig.height=9, out.width="90%"}
-
-
-# 4) Combine headers + terms, and order within analyte
-plot_df <- bind_rows(headers, terms) %>%
-  mutate(
-    analyte = factor(analyte, levels = analyte_order)
-  ) %>%
-  arrange(analyte, desc(is_header), desc(estimate_exp)) %>%
-  group_by(analyte) %>%
-  mutate(row_in_analyte = row_number()) %>%
-  ungroup() %>%
-  # create a unique ordered y factor (keeps headers above their terms)
-  mutate(y = factor(paste(analyte, row_in_analyte, y_lab, sep = "___"),
-                    levels = unique(paste(analyte, row_in_analyte, y_lab, sep = "___"))),
-         y_text = y_lab)
-
-
-```
-
-
-##### Colloquim figures
-
-```{r, echo=FALSE, include =T}
-
-### TSS
-
-# ggsave(plot = DMC_TSS_plot, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMC_TSS.png",sep=""),width=13,height=4,dpi=300)
-
-# ggsave(plot = TSS_plot, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMC_TSS_bp.png",sep=""),width=4,height=3.5,dpi=300)
-
-### DOC
-
-# ggsave(plot = DMC_DOC_plot, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMC_DOC.png",sep=""),width=13,height=4,dpi=300)
-
-# ggsave(plot = DOC_plot, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMC_DOC_bp.png",sep=""),width=4,height=3.5,dpi=300)
-
-
-### TDN
-
-# ggsave(plot = DMC_TDN_plot, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMC_TDN.png",sep=""),width=13,height=4,dpi=300)
-
-# ggsave(plot = TDN_plot, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMC_TDN_bp.png",sep=""),width=4,height=3.5,dpi=300)
-
-
-
-### PO4
-
-# ggsave(plot = DMC_PO4_plot, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMC_PO4.png",sep=""),width=13,height=4,dpi=300)
-
-# ggsave(plot = PO4_plot, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMC_PO4_bp.png",sep=""),width=4,height=3.5,dpi=300)
-
-
-
-```
-
-
-
-
-
-```{r, echo=FALSE, include =T}
- 
-hist(df_model$DOC)
-
-```
-
-
 
 
 End of script. 
