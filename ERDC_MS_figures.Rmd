@@ -1021,12 +1021,18 @@ site_strip_labs <- c(
   F_winters_usgs = "Winters USGS"
 )
 
+
 plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load", 
                      flow_label ="flow lab",
                      color_var = "tsf") {
 
+  df_norm <- df_norm %>% dplyr::ungroup()
+  models_tbl <- models_tbl %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(slope_label = paste0("slope = ", round(slope, 2)))
+
   ggplot(df_norm, aes(Q_c_norm, load_c_norm)) +
-        geom_abline(data = models_tbl, aes(slope = slope, intercept = 0),
+    geom_abline(data = models_tbl, aes(slope = slope, intercept = 0),
                 linewidth = 0.5, alpha = 0.8) +
     geom_path(alpha = 0.5, linewidth = 1) +
     geom_point(aes(color = .data[[color_var]]), size = 2.5, alpha = 0.9) +
@@ -1034,15 +1040,54 @@ plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load",
       data = df_norm %>% filter(storm == "storm"),
       shape = 21, fill = NA, color = "black", stroke = 1.5, size = 3
     ) +
+    geom_text(
+      data = models_tbl,
+      aes(x = 0.55, y = 0.85, label = slope_label),
+      hjust = 1.05, vjust = -0.5,
+      size = 4,
+      inherit.aes = FALSE
+    ) +
     scale_color_viridis_c(option = "plasma", direction = -1) +
     facet_wrap(~ site_OL, nrow = 1,
-                   labeller = labeller(site_OL = as_labeller(site_strip_labs))) +
+               labeller = labeller(site_OL = as_labeller(site_strip_labs))) +
     coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
     labs(x = flow_label, y = value_label) +
-        theme_minimal() +
-
-    theme(legend.position = "bottom", panel.grid.minor = element_blank())
+    theme_minimal() +
+    theme(legend.position = "bottom",
+          panel.grid.minor = element_blank())
 }
+# 
+# plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load", 
+#                      flow_label ="flow lab",
+#                      color_var = "tsf") {
+# 
+#   ggplot(df_norm, aes(Q_c_norm, load_c_norm)) +
+#         geom_abline(data = models_tbl, aes(slope = slope, intercept = 0),
+#                 linewidth = 0.5, alpha = 0.8) +
+#     geom_path(alpha = 0.5, linewidth = 1) +
+#     geom_point(aes(color = .data[[color_var]]), size = 2.5, alpha = 0.9) +
+#     geom_point(
+#       data = df_norm %>% filter(storm == "storm"),
+#       shape = 21, fill = NA, color = "black", stroke = 1.5, size = 3
+#     ) +
+#     # ## try to add in DMC slopes
+#     #   geom_text(
+#     #   data = models_tbl,
+#     #   aes(x = 1, y = 0, label = slope_label),
+#     #   hjust = 1.05, vjust = -0.5,
+#     #   size = 4,
+#     #   inherit.aes = FALSE
+#     # ) +
+#     # 
+#     scale_color_viridis_c(option = "plasma", direction = -1) +
+#     facet_wrap(~ site_OL, nrow = 1,
+#                    labeller = labeller(site_OL = as_labeller(site_strip_labs))) +
+#     coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+#     labs(x = flow_label, y = value_label) +
+#         theme_minimal() +
+# 
+#     theme(legend.position = "bottom", panel.grid.minor = element_blank())
+# }
 
 
 ```
@@ -1279,10 +1324,23 @@ inference_TSS
 
 
 ```{r,  fig.width=9, fig.height=3, out.width="90%", include=F}
+# 
+# DMC_TSS_plot <- plot_dmc(davis_TSS, models_TSS, 
+#                          flow_label = NULL,
+#                          inference_TSS,
+#                          value_label = expression(Norm.~TSS~(mg~L^-1)))
+# DMC_TSS_plot
 
-DMC_TSS_plot <- plot_dmc(davis_TSS, models_TSS, 
-                         flow_label = NULL,
-                         value_label = expression(Norm.~TSS~(mg~L^-1)))
+
+inference_TSS <- infer_slopes_vs1(models_TSS)
+
+DMC_TSS_plot <- plot_dmc(
+  df_norm    = davis_TSS,
+  models_tbl = inference_TSS,
+  flow_label = NULL,
+  value_label = expression(Norm.~TSS~(mg~L^-1))
+)
+
 DMC_TSS_plot
 
 ```
@@ -1320,9 +1378,11 @@ inference_DOC
 
 
 ```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
+inference_DOC <- infer_slopes_vs1(models_DOC)
 
-DMC_DOC_plot <- plot_dmc(davis_DOC, models_DOC, 
+DMC_DOC_plot <- plot_dmc(davis_DOC, 
                          flow_label = NULL,
+                         models_tbl = inference_DOC,
                          value_label = expression(Norm.~DOC~(mg~L^-1)))
 DMC_DOC_plot
 ```

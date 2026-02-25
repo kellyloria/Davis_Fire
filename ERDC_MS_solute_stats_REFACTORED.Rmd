@@ -66,6 +66,7 @@ library(lmerTest)
 library(brms)
 library(MuMIn)
 library(PerformanceAnalytics)
+library(loo)
 
 # Data import
 library(readxl)
@@ -119,9 +120,9 @@ water_year <- function(data) {
 }
 
 # Function to fit or load Bayesian models
-fit_or_load_brm <- function(model_name, formula, data, family, prior, 
-                            chains = 3, cores = 3, iter = 4000, 
-                            warmup = 2000, refit = FALSE) {
+fit_brm <- function(model_name, formula, data, family, prior, 
+                            chains = 3, cores = 3, iter = 3000,
+                            warmup = 1500, refit = FALSE) {
   
   # Create models directory if it doesn't exist
   model_dir <- here("models")
@@ -148,7 +149,7 @@ fit_or_load_brm <- function(model_name, formula, data, family, prior,
     iter = iter, 
     warmup = warmup,
     thin = 1,
-    seed = 123  # For reproducibility
+    seed = 122  # For reproducibility
   )
   
   saveRDS(m, model_file)
@@ -159,7 +160,6 @@ fit_or_load_brm <- function(model_name, formula, data, family, prior,
 ```
 
 ```{r data_paths, include=FALSE}
-# Define data paths (MODIFY THESE FOR YOUR SYSTEM)
 # Option 1: Use here() for project-relative paths (recommended)
 # data_dir <- here()
 
@@ -386,18 +386,31 @@ priors_logn_TSS <- c(
 
 ```{r TSS_bayes_fit, cache=TRUE, dependson="bayes_priors_TSS", include=FALSE}
 # Fit or load TSS Bayesian model
-TSS_m_logn <- fit_or_load_brm(
+TSS_m_logn <- fit_brm(
   model_name = "TSS_lognormal",
   formula = TSS ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
                   catchment + (1 | catchment:site),
   data = df_model,
   family = lognormal(),
-  prior = priors_logn_TSS,
-  chains = 3,
-  cores = 3,
-  iter = 4000,
-  warmup = 2000
-)
+  prior = priors_logn_TSS)
+
+# 
+# TSS_m_logn_AR2 <- fit_brm(
+#   model_name = "TSS_lognormal_ar2",
+#   formula = bf(
+#     TSS ~ scale(lag_C_PPT) + scale(tsf) +
+#       scale(lag_C_PPT) * scale(tsf) +
+#       scale(flow_filled) * scale(tsf) + 
+#       catchment + (1 | catchment:site)),
+#   data = df_model,
+#   family = lognormal(),
+#   prior = priors_logn_TSS,
+#   chains = 3,
+#   cores = 3,
+#   iter = 4000,
+#   warmup = 2000
+# )
+
 ```
 
 ```{r TSS_diagnostics, include=TRUE, echo=FALSE, fig.width=10, fig.height=6}
@@ -406,6 +419,7 @@ plot(TSS_m_logn)
 ```
 
 ```{r TSS_pp_checks,include=TRUE, echo=FALSE, fig.width=10, fig.height=4}
+
 # Posterior predictive checks
 pp_check(TSS_m_logn, ndraws = 100)
 # pp_check(TSS_m_logn, type = "hist", ndraws = 5)
@@ -417,28 +431,34 @@ library(loo)
 summary(TSS_m_logn)
 
 # LOO cross-validation
-loo_TSS <- loo(TSS_m_logn)
+loo_TSS <- brms::loo(TSS_m_logn)
 print(loo_TSS)
+
+
+#loo_TSS_AR2 <- brms::loo(TSS_m_logn_AR2)
 
 # Bayesian R²
 r2_TSS <- bayes_R2(TSS_m_logn)
-kable(r2_TSS, caption = "Bayesian R² for TSS Model", digits = 3)
+#kable(r2_TSS, caption = "Bayesian R² for TSS Model", digits = 3)
+
+
+#loo_compare(loo_TSS, loo_TSS_AR2)
 ```
 
 ```{r TSS_effects_extract, cache=TRUE, dependson="TSS_bayes_fit",  include=FALSE}
 # Extract effects and confidence intervals
-post_TSS <- posterior_summary(TSS_m_logn, pars = "^b_")
+post_TSS <- posterior_summary(TSS_m_logn, pars = "^b_",  probs = c(0.05, 0.95))
 
 effects_df_TSS <- data.frame(
   term = gsub("^b_", "", rownames(post_TSS)),
   estimate = post_TSS[, "Estimate"],
-  l95 = post_TSS[, "Q2.5"],
-  u95 = post_TSS[, "Q97.5"]
+  l90 = post_TSS[, "Q5"],
+  u90 = post_TSS[, "Q95"]
 ) %>%
   mutate(
     estimate_exp = exp(estimate),
-    l95_exp = exp(l95),
-    u95_exp = exp(u95),
+    l90_exp = exp(l90),
+    u90_exp = exp(u90),
     analyte = "TSS",
     bayes_R2 = mean(bayes_R2(TSS_m_logn)[, "Estimate"])
   )
@@ -448,7 +468,7 @@ effects_df_TSS <- data.frame(
 # Display effects table
 kable(effects_df_TSS %>% select(-analyte), 
       caption = "TSS Model Effects (Log and Exponentiated Scale)",
-      digits = 3)
+      digits = 2)
 ```
 
 ```{r TSS_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
@@ -457,7 +477,7 @@ effects_df_TSS %>%
   filter(term != "Intercept") %>%
   ggplot(aes(x = estimate_exp, y = term)) +
   geom_point(size = 3) +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_errorbar(aes(xmin = l90_exp, xmax = u90_exp), width = 0.2) +
   geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
   scale_x_log10() +
   labs(
@@ -472,6 +492,60 @@ effects_df_TSS %>%
     plot.title = element_text(face = "bold")
   )
 ```
+
+Look at solute with TSS, PPT, and flow 
+
+```{r TSS_plot, include=T, echo=FALSE, fig.width=10, fig.height=3}
+# Plot effects
+tsf_plot <- df_model %>%
+  ggplot(aes(y = TSS, x = tsf)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "Days since fire",
+    y = "TSS") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+PPT_plot <- df_model %>%
+  ggplot(aes(y = TSS, x = lag_C_PPT)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "PPT",
+    y = "TSS") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+fow_plot <- df_model %>%
+  ggplot(aes(y = TSS, x = flow_filled)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "flow",
+    y = "TSS") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+covar_grid <- ggarrange( 
+  tsf_plot,
+  PPT_plot,
+  fow_plot,
+  common.legend = T,
+  ncol=3,
+  nrow=1)
+
+covar_grid
+
+```
+
+
 
 #### DOC Model
 
@@ -495,6 +569,9 @@ df_model <- df_WQ_plot %>%
   )
 ```
 
+
+
+
 ```{r bayes_priors_DOC, cache=TRUE, dependson="covar_prep", include=FALSE}
 
 mu0_DOC <- round(log(mean(df_model$DOC_QC, na.rm = TRUE)), 2)
@@ -510,17 +587,13 @@ priors_logn_DOC <- c(
 
 ```{r DOC_bayes_fit, cache=TRUE, dependson="bayes_priors_DOC", include=FALSE}
 # Fit or load DOC Bayesian model
-DOC_m_logn <- fit_or_load_brm(
+DOC_m_logn <- fit_brm(
   model_name = "DOC_lognormal",
   formula = DOC_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
                   catchment + (1 | catchment:site),
   data = df_model,
   family = lognormal(),
-  prior = priors_logn_DOC,
-  chains = 3,
-  cores = 3,
-  iter = 4000,
-  warmup = 2000
+  prior = priors_logn_DOC
 )
 ```
 
@@ -541,28 +614,28 @@ library(loo)
 summary(DOC_m_logn)
 
 # LOO cross-validation
-loo_DOC <- loo(DOC_m_logn)
+loo_DOC <- brms::loo(DOC_m_logn)
 print(loo_DOC)
 
 # Bayesian R²
 r2_DOC <- bayes_R2(DOC_m_logn)
-kable(r2_DOC, caption = "Bayesian R² for DOC Model", digits = 3)
+#kable(r2_DOC, caption = "Bayesian R² for DOC Model", digits = 2)
 ```
 
 ```{r DOC_effects_extract, cache=TRUE, dependson="DOC_bayes_fit",  include=FALSE}
 # Extract effects and confidence intervals
-post_DOC <- posterior_summary(DOC_m_logn, pars = "^b_")
+post_DOC <- posterior_summary(DOC_m_logn, pars = "^b_", probs = c(0.05, 0.95))
 
 effects_df_DOC <- data.frame(
   term = gsub("^b_", "", rownames(post_DOC)),
   estimate = post_DOC[, "Estimate"],
-  l95 = post_DOC[, "Q2.5"],
-  u95 = post_DOC[, "Q97.5"]
+  l90 = post_DOC[, "Q5"],
+  u90 = post_DOC[, "Q95"]
 ) %>%
   mutate(
     estimate_exp = exp(estimate),
-    l95_exp = exp(l95),
-    u95_exp = exp(u95),
+    l90_exp = exp(l90),
+    u90_exp = exp(u90),
     analyte = "DOC",
     bayes_R2 = mean(bayes_R2(DOC_m_logn)[, "Estimate"])
   )
@@ -572,7 +645,7 @@ effects_df_DOC <- data.frame(
 # Display effects table
 kable(effects_df_DOC %>% select(-analyte), 
       caption = "DOC Model Effects (Log and Exponentiated Scale)",
-      digits = 3)
+      digits = 2)
 ```
 
 ```{r DOC_effects_plot_DOC, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
@@ -581,7 +654,7 @@ effects_df_DOC %>%
   filter(term != "Intercept") %>%
   ggplot(aes(x = estimate_exp, y = term)) +
   geom_point(size = 3) +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_errorbar(aes(xmin = l90_exp, xmax = u90_exp), width = 0.2) +
   geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
   scale_x_log10() +
   labs(
@@ -598,6 +671,59 @@ effects_df_DOC %>%
 ```
 
 
+
+
+Look at solute with TSF, PPT, and flow 
+
+```{r DOC_effects_plot, include=T, echo=FALSE, fig.width=10, fig.height=3}
+# Plot effects
+tsf_plot <- df_model %>%
+  ggplot(aes(y = DOC_QC, x = tsf)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "Days since fire",
+    y = "DOC") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+PPT_plot <- df_model %>%
+  ggplot(aes(y = DOC_QC, x = lag_C_PPT)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "PPT",
+    y = "DOC") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+fow_plot <- df_model %>%
+  ggplot(aes(y = DOC_QC, x = flow_filled)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "flow",
+    y = "DOC") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+covar_grid <- ggarrange( 
+  tsf_plot,
+  PPT_plot,
+  fow_plot,
+  common.legend = T,
+  ncol=3,
+  nrow=1)
+
+covar_grid
+
+```
 
 #### TDN Model
 
@@ -636,17 +762,13 @@ priors_logn_TDN <- c(
 
 ```{r TDN_bayes_fit, cache=TRUE, dependson="bayes_priors_TDN", include=FALSE}
 # Fit or load TDN Bayesian model
-TDN_m_logn <- fit_or_load_brm(
+TDN_m_logn <- fit_brm(
   model_name = "TDN_lognormal",
   formula = TDN_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
                   catchment + (1 | catchment:site),
   data = df_model,
   family = lognormal(),
-  prior = priors_logn_TDN,
-  chains = 3,
-  cores = 3,
-  iter = 4000,
-  warmup = 2000
+  prior = priors_logn_TDN
 )
 ```
 
@@ -667,28 +789,28 @@ library(loo)
 summary(TDN_m_logn)
 
 # LOO cross-validation
-loo_TDN <- loo(TDN_m_logn)
+loo_TDN <- brms::loo(TDN_m_logn)
 print(loo_TDN)
 
 # Bayesian R²
 r2_TDN <- bayes_R2(TDN_m_logn)
-kable(r2_TDN, caption = "Bayesian R² for TDN Model", digits = 3)
+#kable(r2_TDN, caption = "Bayesian R² for TDN Model", digits = 3)
 ```
 
 ```{r TDN_effects_extract, cache=TRUE, dependson="TDN_bayes_fit",  include=FALSE}
 # Extract effects and confidence intervals
-post_TDN <- posterior_summary(TDN_m_logn, pars = "^b_")
+post_TDN <- posterior_summary(TDN_m_logn, pars = "^b_", probs = c(0.05, 0.95))
 
 effects_df_TDN <- data.frame(
   term = gsub("^b_", "", rownames(post_TDN)),
   estimate = post_TDN[, "Estimate"],
-  l95 = post_TDN[, "Q2.5"],
-  u95 = post_TDN[, "Q97.5"]
+  l90 = post_TDN[, "Q5"],
+  u90 = post_TDN[, "Q95"]
 ) %>%
   mutate(
     estimate_exp = exp(estimate),
-    l95_exp = exp(l95),
-    u95_exp = exp(u95),
+    l90_exp = exp(l90),
+    u90_exp = exp(u90),
     analyte = "TDN",
     bayes_R2 = mean(bayes_R2(TDN_m_logn)[, "Estimate"])
   )
@@ -698,7 +820,7 @@ effects_df_TDN <- data.frame(
 # Display effects table
 kable(effects_df_TDN %>% select(-analyte), 
       caption = "TDN Model Effects (Log and Exponentiated Scale)",
-      digits = 3)
+      digits = 2)
 ```
 
 ```{r TDN_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
@@ -707,7 +829,7 @@ effects_df_TDN %>%
   filter(term != "Intercept") %>%
   ggplot(aes(x = estimate_exp, y = term)) +
   geom_point(size = 3) +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_errorbar(aes(xmin = l90_exp, xmax = u90_exp), width = 0.2) +
   geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
   scale_x_log10() +
   labs(
@@ -721,6 +843,59 @@ effects_df_TDN %>%
     axis.text = element_text(size = 11),
     plot.title = element_text(face = "bold")
   )
+```
+
+
+Look at solute with TSF, PPT, and flow 
+
+```{r TDN_plot, include=T, echo=FALSE, fig.width=10, fig.height=3}
+# Plot effects
+tsf_plot <- df_model %>%
+  ggplot(aes(y = TDN_QC, x = tsf)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "Days since fire",
+    y = "TDN") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+PPT_plot <- df_model %>%
+  ggplot(aes(y = TDN_QC, x = lag_C_PPT)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "PPT",
+    y = "TDN") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+fow_plot <- df_model %>%
+  ggplot(aes(y = TDN_QC, x = flow_filled)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "flow",
+    y = "TDN") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+covar_grid <- ggarrange( 
+  tsf_plot,
+  PPT_plot,
+  fow_plot,
+  common.legend = T,
+  ncol=3,
+  nrow=1)
+
+covar_grid
+
 ```
 
 
@@ -762,17 +937,13 @@ priors_logn_PO4.P <- c(
 
 ```{r PO4.P_bayes_fit, cache=TRUE, dependson="bayes_priors_PO4.P", include=FALSE}
 # Fit or load PO4.P Bayesian model
-PO4.P_m_logn <- fit_or_load_brm(
+PO4.P_m_logn <- fit_brm(
   model_name = "PO4.P_lognormal",
   formula = PO4.P_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
                   catchment + (1 | catchment:site),
   data = df_model,
   family = lognormal(),
-  prior = priors_logn_PO4.P,
-  chains = 3,
-  cores = 3,
-  iter = 4000,
-  warmup = 2000
+  prior = priors_logn_PO4.P
 )
 ```
 
@@ -793,28 +964,28 @@ library(loo)
 summary(PO4.P_m_logn)
 
 # LOO cross-validation
-loo_PO4.P <- loo(PO4.P_m_logn)
+loo_PO4.P <- brms::loo(PO4.P_m_logn)
 print(loo_PO4.P)
 
 # Bayesian R²
 r2_PO4.P <- bayes_R2(PO4.P_m_logn)
-kable(r2_PO4.P, caption = "Bayesian R² for PO4.P Model", digits = 3)
+##kable(r2_PO4.P, caption = "Bayesian R² for PO4.P Model", digits = 3)
 ```
 
 ```{r PO4.P_effects_extract, cache=TRUE, dependson="PO4.P_bayes_fit",  include=FALSE}
 # Extract effects and confidence intervals
-post_PO4.P <- posterior_summary(PO4.P_m_logn, pars = "^b_")
+post_PO4.P <- posterior_summary(PO4.P_m_logn, pars = "^b_", probs = c(0.05, 0.95))
 
 effects_df_PO4.P <- data.frame(
   term = gsub("^b_", "", rownames(post_PO4.P)),
   estimate = post_PO4.P[, "Estimate"],
-  l95 = post_PO4.P[, "Q2.5"],
-  u95 = post_PO4.P[, "Q97.5"]
+  l90 = post_PO4.P[, "Q5"],
+  u90 = post_PO4.P[, "Q95"]
 ) %>%
   mutate(
     estimate_exp = exp(estimate),
-    l95_exp = exp(l95),
-    u95_exp = exp(u95),
+    l90_exp = exp(l90),
+    u90_exp = exp(u90),
     analyte = "PO4.P",
     bayes_R2 = mean(bayes_R2(PO4.P_m_logn)[, "Estimate"])
   )
@@ -824,7 +995,7 @@ effects_df_PO4.P <- data.frame(
 # Display effects table
 kable(effects_df_PO4.P %>% select(-analyte), 
       caption = "PO4.P Model Effects (Log and Exponentiated Scale)",
-      digits = 3)
+      digits = 2)
 ```
 
 ```{r PO4.P_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
@@ -833,7 +1004,7 @@ effects_df_PO4.P %>%
   filter(term != "Intercept") %>%
   ggplot(aes(x = estimate_exp, y = term)) +
   geom_point(size = 3) +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_errorbar(aes(xmin = l90_exp, xmax = u90_exp), width = 0.2) +
   geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
   scale_x_log10() +
   labs(
@@ -847,6 +1018,59 @@ effects_df_PO4.P %>%
     axis.text = element_text(size = 11),
     plot.title = element_text(face = "bold")
   )
+```
+
+
+Look at solute with TSF, PPT, and flow 
+
+```{r PO4_plot, include=T, echo=FALSE, fig.width=10, fig.height=3}
+# Plot effects
+tsf_plot <- df_model %>%
+  ggplot(aes(y = PO4.P_QC, x = tsf)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "Days since fire",
+    y = "PO4.P") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+PPT_plot <- df_model %>%
+  ggplot(aes(y = PO4.P_QC, x = lag_C_PPT)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "PPT",
+    y = "PO4.P") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+fow_plot <- df_model %>%
+  ggplot(aes(y = PO4.P_QC, x = flow_filled)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "flow",
+    y = "PO4.P") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+covar_grid <- ggarrange( 
+  tsf_plot,
+  PPT_plot,
+  fow_plot,
+  common.legend = T,
+  ncol=3,
+  nrow=1)
+
+covar_grid
+
 ```
 
 
@@ -888,17 +1112,13 @@ priors_logn_Sr <- c(
 
 ```{r Sr_bayes_fit, cache=TRUE, dependson="bayes_priors_Sr", include=FALSE}
 # Fit or load Sr Bayesian model
-Sr_m_logn <- fit_or_load_brm(
+Sr_m_logn <- fit_brm(
   model_name = "Sr_lognormal",
   formula = Sr_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
                   catchment + (1 | catchment:site),
   data = df_model,
   family = lognormal(),
-  prior = priors_logn_Sr,
-  chains = 3,
-  cores = 3,
-  iter = 4000,
-  warmup = 2000
+  prior = priors_logn_Sr
 )
 ```
 
@@ -919,28 +1139,28 @@ library(loo)
 summary(Sr_m_logn)
 
 # LOO cross-validation
-loo_Sr <- loo(Sr_m_logn)
+loo_Sr <- brms::loo(Sr_m_logn)
 print(loo_Sr)
 
 # Bayesian R²
 r2_Sr <- bayes_R2(Sr_m_logn)
-kable(r2_Sr, caption = "Bayesian R² for Sr Model", digits = 3)
+#kable(r2_Sr, caption = "Bayesian R² for Sr Model", digits = 3)
 ```
 
 ```{r Sr_effects_extract, cache=TRUE, dependson="Sr_bayes_fit",  include=FALSE}
 # Extract effects and confidence intervals
-post_Sr <- posterior_summary(Sr_m_logn, pars = "^b_")
+post_Sr <- posterior_summary(Sr_m_logn, pars = "^b_", probs = c(0.05, 0.95))
 
 effects_df_Sr <- data.frame(
   term = gsub("^b_", "", rownames(post_Sr)),
   estimate = post_Sr[, "Estimate"],
-  l95 = post_Sr[, "Q2.5"],
-  u95 = post_Sr[, "Q97.5"]
+  l90 = post_Sr[, "Q5"],
+  u90 = post_Sr[, "Q95"]
 ) %>%
   mutate(
     estimate_exp = exp(estimate),
-    l95_exp = exp(l95),
-    u95_exp = exp(u95),
+    l90_exp = exp(l90),
+    u90_exp = exp(u90),
     analyte = "Sr",
     bayes_R2 = mean(bayes_R2(Sr_m_logn)[, "Estimate"])
   )
@@ -950,7 +1170,7 @@ effects_df_Sr <- data.frame(
 # Display effects table
 kable(effects_df_Sr %>% select(-analyte), 
       caption = "Sr Model Effects (Log and Exponentiated Scale)",
-      digits = 3)
+      digits = 2)
 ```
 
 ```{r Sr_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
@@ -959,7 +1179,7 @@ effects_df_Sr %>%
   filter(term != "Intercept") %>%
   ggplot(aes(x = estimate_exp, y = term)) +
   geom_point(size = 3) +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_errorbar(aes(xmin = l90_exp, xmax = u90_exp), width = 0.2) +
   geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
   scale_x_log10() +
   labs(
@@ -976,6 +1196,57 @@ effects_df_Sr %>%
 ```
 
 
+Look at solute with TSF, PPT, and flow 
+
+```{r Sr_plot, include=T, echo=FALSE, fig.width=10, fig.height=3}
+# Plot effects
+tsf_plot <- df_model %>%
+  ggplot(aes(y = Sr_QC, x = tsf)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "Days since fire",
+    y = "Sr") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+PPT_plot <- df_model %>%
+  ggplot(aes(y = Sr_QC, x = lag_C_PPT)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "PPT",
+    y = "Sr") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+fow_plot <- df_model %>%
+  ggplot(aes(y = Sr_QC, x = flow_filled)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "flow",
+    y = "Sr") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+covar_grid <- ggarrange( 
+  tsf_plot,
+  PPT_plot,
+  fow_plot,
+  common.legend = T,
+  ncol=3,
+  nrow=1)
+
+covar_grid
+
+```
 
 
 
@@ -1016,17 +1287,13 @@ priors_logn_Fe <- c(
 
 ```{r Fe_bayes_fit, cache=TRUE, dependson="bayes_priors_Fe", include=FALSE}
 # Fit or load Fe Bayesian model
-Fe_m_logn <- fit_or_load_brm(
+Fe_m_logn <- fit_brm(
   model_name = "Fe_lognormal",
   formula = Fe_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
                   catchment + (1 | catchment:site),
   data = df_model,
   family = lognormal(),
-  prior = priors_logn_Fe,
-  chains = 3,
-  cores = 3,
-  iter = 4000,
-  warmup = 2000
+  prior = priors_logn_Fe
 )
 ```
 
@@ -1047,28 +1314,28 @@ library(loo)
 summary(Fe_m_logn)
 
 # LOO cross-validation
-loo_Fe <- loo(Fe_m_logn)
+loo_Fe <- brms::loo(Fe_m_logn)
 print(loo_Fe)
 
 # Bayesian R²
 r2_Fe <- bayes_R2(Fe_m_logn)
-kable(r2_Fe, caption = "Bayesian R² for Fe Model", digits = 3)
+#kable(r2_Fe, caption = "Bayesian R² for Fe Model", digits = 3)
 ```
 
 ```{r Fe_effects_extract, cache=TRUE, dependson="Fe_bayes_fit",  include=FALSE}
 # Extract effects and confidence intervals
-post_Fe <- posterior_summary(Fe_m_logn, pars = "^b_")
+post_Fe <- posterior_summary(Fe_m_logn, pars = "^b_", probs = c(0.05, 0.95))
 
 effects_df_Fe <- data.frame(
   term = gsub("^b_", "", rownames(post_Fe)),
   estimate = post_Fe[, "Estimate"],
-  l95 = post_Fe[, "Q2.5"],
-  u95 = post_Fe[, "Q97.5"]
+  l90 = post_Fe[, "Q5"],
+  u90 = post_Fe[, "Q95"]
 ) %>%
   mutate(
     estimate_exp = exp(estimate),
-    l95_exp = exp(l95),
-    u95_exp = exp(u95),
+    l90_exp = exp(l90),
+    u90_exp = exp(u90),
     analyte = "Fe",
     bayes_R2 = mean(bayes_R2(Fe_m_logn)[, "Estimate"])
   )
@@ -1078,7 +1345,7 @@ effects_df_Fe <- data.frame(
 # Display effects table
 kable(effects_df_Fe %>% select(-analyte), 
       caption = "Fe Model Effects (Log and Exponentiated Scale)",
-      digits = 3)
+      digits = 2)
 ```
 
 ```{r Fe_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
@@ -1087,7 +1354,7 @@ effects_df_Fe %>%
   filter(term != "Intercept") %>%
   ggplot(aes(x = estimate_exp, y = term)) +
   geom_point(size = 3) +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_errorbar(aes(xmin = l90_exp, xmax = u90_exp), width = 0.2) +
   geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
   scale_x_log10() +
   labs(
@@ -1105,6 +1372,57 @@ effects_df_Fe %>%
 
 
 
+Look at solute with TSF, PPT, and flow 
+
+```{r Fe_plot, include=T, echo=FALSE, fig.width=10, fig.height=3}
+# Plot effects
+tsf_plot <- df_model %>%
+  ggplot(aes(y = Fe_QC, x = tsf)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "Days since fire",
+    y = "Fe") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+PPT_plot <- df_model %>%
+  ggplot(aes(y = Fe_QC, x = lag_C_PPT)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "PPT",
+    y = "Fe") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+fow_plot <- df_model %>%
+  ggplot(aes(y = Fe_QC, x = flow_filled)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "flow",
+    y = "Fe") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+covar_grid <- ggarrange( 
+  tsf_plot,
+  PPT_plot,
+  fow_plot,
+  common.legend = T,
+  ncol=3,
+  nrow=1)
+
+covar_grid
+
+```
 
 
 #### Mn Model
@@ -1144,17 +1462,13 @@ priors_logn_Mn <- c(
 
 ```{r Mn_bayes_fit, cache=TRUE, dependson="bayes_priors_Mn", include=FALSE}
 # Fit or load Mn Bayesian model
-Mn_m_logn <- fit_or_load_brm(
+Mn_m_logn <- fit_brm(
   model_name = "Mn_lognormal",
   formula = Mn_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
                   catchment + (1 | catchment:site),
   data = df_model,
   family = lognormal(),
-  prior = priors_logn_Mn,
-  chains = 3,
-  cores = 3,
-  iter = 4000,
-  warmup = 2000
+  prior = priors_logn_Mn
 )
 ```
 
@@ -1175,28 +1489,28 @@ library(loo)
 summary(Mn_m_logn)
 
 # LOO cross-validation
-loo_Mn <- loo(Mn_m_logn)
+loo_Mn <- brms::loo(Mn_m_logn)
 print(loo_Mn)
 
 # Bayesian R²
 r2_Mn <- bayes_R2(Mn_m_logn)
-kable(r2_Mn, caption = "Bayesian R² for Mn Model", digits = 3)
+#kable(r2_Mn, caption = "Bayesian R² for Mn Model", digits = 3)
 ```
 
 ```{r Mn_effects_extract, cache=TRUE, dependson="Mn_bayes_fit",  include=FALSE}
 # Extract effects and confidence intervals
-post_Mn <- posterior_summary(Mn_m_logn, pars = "^b_")
+post_Mn <- posterior_summary(Mn_m_logn, pars = "^b_", probs = c(0.05, 0.95))
 
 effects_df_Mn <- data.frame(
   term = gsub("^b_", "", rownames(post_Mn)),
   estimate = post_Mn[, "Estimate"],
-  l95 = post_Mn[, "Q2.5"],
-  u95 = post_Mn[, "Q97.5"]
+  l90 = post_Mn[, "Q5"],
+  u90 = post_Mn[, "Q95"]
 ) %>%
   mutate(
     estimate_exp = exp(estimate),
-    l95_exp = exp(l95),
-    u95_exp = exp(u95),
+    l90_exp = exp(l90),
+    u90_exp = exp(u90),
     analyte = "Mn",
     bayes_R2 = mean(bayes_R2(Mn_m_logn)[, "Estimate"])
   )
@@ -1206,7 +1520,7 @@ effects_df_Mn <- data.frame(
 # Display effects table
 kable(effects_df_Mn %>% select(-analyte), 
       caption = "Mn Model Effects (Log and Exponentiated Scale)",
-      digits = 3)
+      digits = 2)
 ```
 
 ```{r Mn_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
@@ -1215,7 +1529,7 @@ effects_df_Mn %>%
   filter(term != "Intercept") %>%
   ggplot(aes(x = estimate_exp, y = term)) +
   geom_point(size = 3) +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_errorbar(aes(xmin = l90_exp, xmax = u90_exp), width = 0.2) +
   geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
   scale_x_log10() +
   labs(
@@ -1232,6 +1546,58 @@ effects_df_Mn %>%
 ```
 
 
+
+Look at solute with TSF, PPT, and flow 
+
+```{r Mn_plot, include=T, echo=FALSE, fig.width=10, fig.height=3}
+# Plot effects
+tsf_plot <- df_model %>%
+  ggplot(aes(y = Mn_QC, x = tsf)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "Days since fire",
+    y = "Mn") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+PPT_plot <- df_model %>%
+  ggplot(aes(y = Mn_QC, x = lag_C_PPT)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "PPT",
+    y = "Mn") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+fow_plot <- df_model %>%
+  ggplot(aes(y = Mn_QC, x = flow_filled)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "flow",
+    y = "Mn") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+covar_grid <- ggarrange( 
+  tsf_plot,
+  PPT_plot,
+  fow_plot,
+  common.legend = T,
+  ncol=3,
+  nrow=1)
+
+covar_grid
+
+```
 
 
 #### Ba Model
@@ -1271,17 +1637,13 @@ priors_logn_Ba <- c(
 
 ```{r Ba_bayes_fit, cache=TRUE, dependson="bayes_priors_Ba", include=FALSE}
 # Fit or load Ba Bayesian model
-Ba_m_logn <- fit_or_load_brm(
+Ba_m_logn <- fit_brm(
   model_name = "Ba_lognormal",
   formula = Ba_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
                   catchment + (1 | catchment:site),
   data = df_model,
   family = lognormal(),
-  prior = priors_logn_Ba,
-  chains = 3,
-  cores = 3,
-  iter = 4000,
-  warmup = 2000
+  prior = priors_logn_Ba
 )
 ```
 
@@ -1302,28 +1664,28 @@ library(loo)
 summary(Ba_m_logn)
 
 # LOO cross-validation
-loo_Ba <- loo(Ba_m_logn)
+loo_Ba <- brms::loo(Ba_m_logn)
 print(loo_Ba)
 
 # Bayesian R²
 r2_Ba <- bayes_R2(Ba_m_logn)
-kable(r2_Ba, caption = "Bayesian R² for Ba Model", digits = 3)
+#kable(r2_Ba, caption = "Bayesian R² for Ba Model", digits = 3)
 ```
 
 ```{r Ba_effects_extract, cache=TRUE, dependson="Ba_bayes_fit",  include=FALSE}
 # Extract effects and confidence intervals
-post_Ba <- posterior_summary(Ba_m_logn, pars = "^b_")
+post_Ba <- posterior_summary(Ba_m_logn, pars = "^b_", probs = c(0.05, 0.95))
 
 effects_df_Ba <- data.frame(
   term = gsub("^b_", "", rownames(post_Ba)),
   estimate = post_Ba[, "Estimate"],
-  l95 = post_Ba[, "Q2.5"],
-  u95 = post_Ba[, "Q97.5"]
+  l90 = post_Ba[, "Q5"],
+  u90 = post_Ba[, "Q95"]
 ) %>%
   mutate(
     estimate_exp = exp(estimate),
-    l95_exp = exp(l95),
-    u95_exp = exp(u95),
+    l90_exp = exp(l90),
+    u90_exp = exp(u90),
     analyte = "Ba",
     bayes_R2 = mean(bayes_R2(Ba_m_logn)[, "Estimate"])
   )
@@ -1333,7 +1695,7 @@ effects_df_Ba <- data.frame(
 # Display effects table
 kable(effects_df_Ba %>% select(-analyte), 
       caption = "Ba Model Effects (Log and Exponentiated Scale)",
-      digits = 3)
+      digits = 2)
 ```
 
 ```{r Ba_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
@@ -1342,7 +1704,7 @@ effects_df_Ba %>%
   filter(term != "Intercept") %>%
   ggplot(aes(x = estimate_exp, y = term)) +
   geom_point(size = 3) +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_errorbar(aes(xmin = l90_exp, xmax = u90_exp), width = 0.2) +
   geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
   scale_x_log10() +
   labs(
@@ -1360,6 +1722,57 @@ effects_df_Ba %>%
 
 
 
+Look at solute with TSF, PPT, and flow 
+
+```{r Ba_plot, include=T, echo=FALSE, fig.width=10, fig.height=3}
+# Plot effects
+tsf_plot <- df_model %>%
+  ggplot(aes(y = Ba_QC, x = tsf)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "Days since fire",
+    y = "Ba") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+PPT_plot <- df_model %>%
+  ggplot(aes(y = Ba_QC, x = lag_C_PPT)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "PPT",
+    y = "Ba") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+fow_plot <- df_model %>%
+  ggplot(aes(y = Ba_QC, x = flow_filled)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "flow",
+    y = "Ba") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+covar_grid <- ggarrange( 
+  tsf_plot,
+  PPT_plot,
+  fow_plot,
+  common.legend = T,
+  ncol=3,
+  nrow=1)
+
+covar_grid
+
+```
 
 
 #### Ca Model
@@ -1399,18 +1812,13 @@ priors_logn_Ca <- c(
 
 ```{r Ca_bayes_fit, cache=TRUE, dependson="bayes_priors_Ca", include=FALSE}
 # Fit or load Ca Bayesian model
-Ca_m_logn <- fit_or_load_brm(
+Ca_m_logn <- fit_brm(
   model_name = "Ca_lognormal",
   formula = Ca_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
                   catchment + (1 | catchment:site),
   data = df_model,
   family = lognormal(),
-  prior = priors_logn_Ca,
-  chains = 3,
-  cores = 3,
-  iter = 4000,
-  warmup = 2000
-)
+  prior = priors_logn_Ca)
 ```
 
 ```{r Ca_diagnostics, include=TRUE, echo=FALSE, fig.width=10, fig.height=6}
@@ -1430,28 +1838,28 @@ library(loo)
 summary(Ca_m_logn)
 
 # LOO cross-validation
-loo_Ca <- loo(Ca_m_logn)
+loo_Ca <- brms::loo(Ca_m_logn)
 print(loo_Ca)
 
 # Bayesian R²
 r2_Ca <- bayes_R2(Ca_m_logn)
-kable(r2_Ca, caption = "Bayesian R² for Ca Model", digits = 3)
+#kable(r2_Ca, caption = "Bayesian R² for Ca Model", digits = 3)
 ```
 
 ```{r Ca_effects_extract, cache=TRUE, dependson="Ca_bayes_fit",  include=FALSE}
 # Extract effects and confidence intervals
-post_Ca <- posterior_summary(Ca_m_logn, pars = "^b_")
+post_Ca <- posterior_summary(Ca_m_logn, pars = "^b_", probs = c(0.05, 0.95))
 
 effects_df_Ca <- data.frame(
   term = gsub("^b_", "", rownames(post_Ca)),
   estimate = post_Ca[, "Estimate"],
-  l95 = post_Ca[, "Q2.5"],
-  u95 = post_Ca[, "Q97.5"]
+  l90 = post_Ca[, "Q5"],
+  u90 = post_Ca[, "Q95"]
 ) %>%
   mutate(
     estimate_exp = exp(estimate),
-    l95_exp = exp(l95),
-    u95_exp = exp(u95),
+    l90_exp = exp(l90),
+    u90_exp = exp(u90),
     analyte = "Ca",
     bayes_R2 = mean(bayes_R2(Ca_m_logn)[, "Estimate"])
   )
@@ -1461,7 +1869,7 @@ effects_df_Ca <- data.frame(
 # Display effects table
 kable(effects_df_Ca %>% select(-analyte), 
       caption = "Ca Model Effects (Log and Exponentiated Scale)",
-      digits = 3)
+      digits = 2)
 ```
 
 ```{r Ca_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
@@ -1470,7 +1878,7 @@ effects_df_Ca %>%
   filter(term != "Intercept") %>%
   ggplot(aes(x = estimate_exp, y = term)) +
   geom_point(size = 3) +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_errorbar(aes(xmin = l90_exp, xmax = u90_exp), width = 0.2) +
   geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
   scale_x_log10() +
   labs(
@@ -1487,6 +1895,59 @@ effects_df_Ca %>%
 ```
 
 
+
+
+Look at solute with TSF, PPT, and flow 
+
+```{r Ca_plot, include=T, echo=FALSE, fig.width=10, fig.height=3}
+# Plot effects
+tsf_plot <- df_model %>%
+  ggplot(aes(y = Ca_QC, x = tsf)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "Days since fire",
+    y = "Ca") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+PPT_plot <- df_model %>%
+  ggplot(aes(y = Ca_QC, x = lag_C_PPT)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "PPT",
+    y = "Ca") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+fow_plot <- df_model %>%
+  ggplot(aes(y = Ca_QC, x = flow_filled)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "flow",
+    y = "Ca") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+covar_grid <- ggarrange( 
+  tsf_plot,
+  PPT_plot,
+  fow_plot,
+  common.legend = T,
+  ncol=3,
+  nrow=1)
+
+covar_grid
+
+```
 
 
 
@@ -1527,17 +1988,13 @@ priors_logn_Al <- c(
 
 ```{r Al_bayes_fit, cache=TRUE, dependson="bayes_priors_Al", include=FALSE}
 # Fit or load Al Bayesian model
-Al_m_logn <- fit_or_load_brm(
+Al_m_logn <- fit_brm(
   model_name = "Al_lognormal",
   formula = Al_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
                   catchment + (1 | catchment:site),
   data = df_model,
   family = lognormal(),
-  prior = priors_logn_Al,
-  chains = 3,
-  cores = 3,
-  iter = 4000,
-  warmup = 2000
+  prior = priors_logn_Al
 )
 ```
 
@@ -1558,28 +2015,28 @@ library(loo)
 summary(Al_m_logn)
 
 # LOO cross-validation
-loo_Al <- loo(Al_m_logn)
+loo_Al <- brms::loo(Al_m_logn)
 print(loo_Al)
 
 # Bayesian R²
 r2_Al <- bayes_R2(Al_m_logn)
-kable(r2_Al, caption = "Bayesian R² for Al Model", digits = 3)
+#kable(r2_Al, caption = "Bayesian R² for Al Model", digits = 3)
 ```
 
 ```{r Al_effects_extract, cache=TRUE, dependson="Al_bayes_fit",  include=FALSE}
 # Extract effects and confidence intervals
-post_Al <- posterior_summary(Al_m_logn, pars = "^b_")
+post_Al <- posterior_summary(Al_m_logn, pars = "^b_", probs = c(0.05, 0.95))
 
 effects_df_Al <- data.frame(
   term = gsub("^b_", "", rownames(post_Al)),
   estimate = post_Al[, "Estimate"],
-  l95 = post_Al[, "Q2.5"],
-  u95 = post_Al[, "Q97.5"]
+  l90 = post_Al[, "Q5"],
+  u90 = post_Al[, "Q95"]
 ) %>%
   mutate(
     estimate_exp = exp(estimate),
-    l95_exp = exp(l95),
-    u95_exp = exp(u95),
+    l90_exp = exp(l90),
+    u90_exp = exp(u90),
     analyte = "Al",
     bayes_R2 = mean(bayes_R2(Al_m_logn)[, "Estimate"])
   )
@@ -1590,7 +2047,7 @@ effects_df_Al <- data.frame(
 # Display effects table
 kable(effects_df_Al %>% select(-analyte), 
       caption = "Al Model Effects (Log and Exponentiated Scale)",
-      digits = 3)
+      digits = 2)
 ```
 
 ```{r Al_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
@@ -1599,7 +2056,7 @@ effects_df_Al %>%
   filter(term != "Intercept") %>%
   ggplot(aes(x = estimate_exp, y = term)) +
   geom_point(size = 3) +
-  geom_errorbar(aes(xmin = l95_exp, xmax = u95_exp), width = 0.2) +
+  geom_errorbar(aes(xmin = l90_exp, xmax = u90_exp), width = 0.2) +
   geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
   scale_x_log10() +
   labs(
@@ -1607,6 +2064,184 @@ effects_df_Al %>%
     y = NULL,
     title = "Al Model: Effect Sizes",
     subtitle = sprintf("Bayesian R² = %.2f", unique(effects_df_Al$bayes_R2))
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+```
+
+
+
+Look at solute with TSF, PPT, and flow 
+
+```{r Al_plot, include=T, echo=FALSE, fig.width=10, fig.height=3}
+# Plot effects
+tsf_plot <- df_model %>%
+  ggplot(aes(y = Al_QC, x = tsf)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "Days since fire",
+    y = "Al") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+PPT_plot <- df_model %>%
+  ggplot(aes(y = Al_QC, x = lag_C_PPT)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "PPT",
+    y = "Al") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+fow_plot <- df_model %>%
+  ggplot(aes(y = Al_QC, x = flow_filled)) +
+  geom_point(aes(color=tsf)) +
+  labs(
+    x = "flow",
+    y = "Al") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    plot.title = element_text(face = "bold")
+  )
+
+covar_grid <- ggarrange( 
+  tsf_plot,
+  PPT_plot,
+  fow_plot,
+  common.legend = T,
+  ncol=3,
+  nrow=1)
+
+covar_grid
+
+```
+
+
+
+#### As Model
+
+```{r covar_prep_As, cache=TRUE, dependson="data_prep", include=FALSE}
+
+vars <- c("As_QC", "lag_C_PPT", "tsf", "flow_filled", "temp", "DO", "EC", "pH", "site")
+
+df_model <- df_WQ_plot %>%
+  left_join(new_df_hydro, by = c("site", "date")) %>%
+  filter(site != "ophir") %>%
+  select(all_of(vars)) %>%
+  drop_na() %>%
+  mutate(
+    catchment = case_when(
+      site == "winters_usgs" ~ "winters",
+      site == "winters_up" ~ "winters",
+      site == "browns" ~ "browns",
+      site == "browns_sub" ~ "browns"
+    )
+  )
+```
+
+
+```{r bayes_priors_As, cache=TRUE, dependson="covar_prep",  include=FALSE}
+
+mu0_As <- round(log(mean(df_model$As_QC, na.rm = TRUE)), 2)
+
+priors_logn_As <- c(
+  set_prior(sprintf("normal(%f, 2)", mu0_As), class = "Intercept"),
+  set_prior("normal(0, 1)", class = "b"),
+  set_prior("exponential(1)", class = "sd"),
+  set_prior("exponential(1)", class = "sigma")
+)
+```
+
+
+```{r As_bayes_fit, cache=TRUE, dependson="bayes_priors_As", include=FALSE}
+# Fit or load Al Bayesian model
+As_m_logn <- fit_brm(
+  model_name = "As_lognormal",
+  formula = As_QC ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
+                  catchment + (1 | catchment:site),
+  data = df_model,
+  family = lognormal(),
+  prior = priors_logn_As
+)
+```
+
+```{r As_diagnostics, include=TRUE, echo=FALSE, fig.width=10, fig.height=6}
+# Trace plots
+plot(As_m_logn)
+```
+
+```{r As_pp_checks,include=TRUE, echo=FALSE, fig.width=10, fig.height=4}
+# Posterior predictive checks
+pp_check(As_m_logn, ndraws = 100)
+# pp_check(As_m_logn, type = "hist", ndraws = 5)
+```
+
+```{r As_results,include=TRUE, echo=FALSE}
+library(loo)
+# Model summary
+summary(As_m_logn)
+
+# LOO cross-validation
+loo_As <- brms::loo(As_m_logn)
+print(loo_As)
+
+# Bayesian R²
+r2_As <- bayes_R2(As_m_logn)
+#kable(r2_As, caption = "Bayesian R² for Al Model", digits = 3)
+```
+
+```{r As_effects_extract, cache=TRUE, dependson="As_bayes_fit",  include=FALSE}
+# Extract effects and confidence intervals
+post_As <- posterior_summary(As_m_logn, pars = "^b_", probs = c(0.05, 0.95))
+
+effects_df_As <- data.frame(
+  term = gsub("^b_", "", rownames(post_As)),
+  estimate = post_As[, "Estimate"],
+  l90 = post_As[, "Q5"],
+  u90 = post_As[, "Q95"]
+) %>%
+  mutate(
+    estimate_exp = exp(estimate),
+    l90_exp = exp(l90),
+    u90_exp = exp(u90),
+    analyte = "Al",
+    bayes_R2 = mean(bayes_R2(As_m_logn)[, "Estimate"])
+  )
+```
+
+
+```{r As_effects_table,  echo=FALSE}
+# Display effects table
+kable(effects_df_As %>% select(-analyte), 
+      caption = "Al Model Effects (Log and Exponentiated Scale)",
+      digits = 2)
+```
+
+```{r As_effects_plot, include=FALSE, echo=FALSE, fig.width=8, fig.height=4}
+# Plot effects
+effects_df_As %>%
+  filter(term != "Intercept") %>%
+  ggplot(aes(x = estimate_exp, y = term)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(xmin = l90_exp, xmax = u90_exp), width = 0.2) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
+  scale_x_log10() +
+  labs(
+    x = "Multiplicative effect (exp(β))",
+    y = NULL,
+    title = "Al Model: Effect Sizes",
+    subtitle = sprintf("Bayesian R² = %.2f", unique(effects_df_As$bayes_R2))
   ) +
   theme_classic() +
   theme(
@@ -1654,14 +2289,14 @@ analyte_order <- coeff_plt_df %>%
   pull(analyte)
 
 model_plt <- coeff_plt_df %>%
-  filter(analyte %in% c("PO4.P", "TDN", "DOC", "TSS")) %>%
+ # filter(analyte %in% c("PO4.P", "TDN", "DOC", "TSS")) %>%
   filter(term != "Intercept", term != "catchmentwinters") %>%
   mutate(analyte = factor(analyte, levels = analyte_order)) %>%
-  ggplot(aes(x = estimate_exp, y = term, #color = bayes_R2, 
+  ggplot(aes(x = estimate_exp, y = term, color = bayes_R2, 
              shape = term)) +
   geom_vline(xintercept = 1, linetype = 2) +
-  geom_errorbarh(aes(xmin = l95_exp, xmax = u95_exp), height = 0) +
-  geom_point(size = 2) +
+  geom_errorbarh(aes(xmin = l90_exp, xmax = u90_exp), height = 0) +
+  geom_point(size = 3) +
   facet_grid(analyte ~ .) +
   scale_x_log10() +
   labs(
@@ -1673,7 +2308,9 @@ model_plt <- coeff_plt_df %>%
     scaletsf = expression(beta["Days since fire"]),
     scaleflow_filled = expression(beta["Flow"])
   )) +
-  scale_color_viridis_c(option = "viridis", name = "Bayes R²") +
+  scale_color_viridis_c(option = "viridis", 
+                              direction = -1,
+                        name = "Bayes R²") +
   scale_shape_discrete(
     name = "Predictor",
     labels = c(
@@ -1695,14 +2332,21 @@ print(model_plt)
 ggsave(
   filename = file.path(fig_dir, "ERDC_coeff_plts_GPHS.png"),
   plot = model_plt,
-  width = 5.5,
-  height = 4.75,
+  width = 5.25,
+  height = 7.5,
   dpi = 300
 )
 
 ```
 
 ## Session Info
+
+
+
+```{r, echo=FALSE, include =F}
+# ggsave(plot = DMCres_grid_metals, filename = paste("./Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_res_metals_grid_plot_SI.png",sep=""),width=6,height=20,dpi=300)
+
+```
 
 ```{r session_info, echo=FALSE}
 sessionInfo()
