@@ -1,7 +1,7 @@
 ERDC Davis Fire MS L-Q analysis
 ================
 Kelly Loria
-2026-02-17
+2026-03-25
 
 - [============================================================================](#section)
 - [I. Characterize hydroclimate
@@ -13,6 +13,8 @@ Kelly Loria
   - [Runoff and sampling timing as streamflow, sample dates, and
     ppt](#runoff-and-sampling-timing-as-streamflow-sample-dates-and-ppt)
   - [Look at run off largest events:](#look-at-run-off-largest-events)
+  - [Find the date of the highest flow at each site
+    ?](#find-the-date-of-the-highest-flow-at-each-site-)
   - [============================================================================](#section-2)
 - [II. MS basin differences in solute
   concetrations](#ii-ms-basin-differences-in-solute-concetrations)
@@ -181,10 +183,6 @@ df21 <- df2 %>%
 
 ### Look at run off largest events:
 
-#### A. Biggest peak exceedance
-
-#### B. Biggest peak flow
-
     ## # A tibble: 5 × 9
     ##   site       event_id_lf event_start_date event_end_date duration_days peak_flow
     ##   <chr>            <int> <date>           <date>                 <int>     <dbl>
@@ -195,6 +193,17 @@ df21 <- df2 %>%
     ## 5 winters_u…          21 2025-02-05       2025-02-05                 1    0.0309
     ## # ℹ 3 more variables: peak_flow_date <date>, total_ppt_mm <dbl>,
     ## #   peak_ppt_mm <dbl>
+
+### Find the date of the highest flow at each site ?
+
+    ## # A tibble: 5 × 3
+    ##   site         date       flow_filled
+    ##   <chr>        <date>           <dbl>
+    ## 1 browns       2025-02-05      0.0582
+    ## 2 browns_sub   2025-04-26      0.0515
+    ## 3 ophir        2025-05-11      0.776 
+    ## 4 winters_up   2025-02-05      0.0554
+    ## 5 winters_usgs 2025-02-05      0.0309
 
 ### ============================================================================
 
@@ -324,7 +333,7 @@ wq_boxplot <- function(data, y, y_lab,
       alpha = 0.95,
       position = dodge
     ) +
-     labs(y = y_lab, x = "Burn %", fill= "Reach") +
+     labs(y = y_lab, x = "Area burned (%)", fill= "Reach") +
     theme_minimal()
   
   if (!is.null(site_colors)) p <- p + scale_fill_manual(values = site_colors,
@@ -377,9 +386,9 @@ wq_boxplot <- function(data, y, y_lab,
 ### Flow + storm flags (unchanged logic, but isolated)
 
 ``` r
-prep_flow <- function(new_df_hydro, flow_start = as.Date("2024-10-01")) {
+prep_flow <- function(new_df_hydro, flow_start = as.Date("2024-10-15"), flow_end = as.Date("2025-12-11")) {
   new_df_hydro %>%
-    filter(date >= flow_start) %>%
+    filter(date >= flow_start & date <= flow_end) %>%
     mutate(sec_per_day = 86400) %>%
     arrange(site, date) %>%
     group_by(site) %>%
@@ -390,23 +399,6 @@ prep_flow <- function(new_df_hydro, flow_start = as.Date("2024-10-01")) {
     ) %>%
     ungroup()
 }
-
-#### YOU ARE HERE 
-
-# 
-# prep_storm_flags <- function(event_summary,test_keys) {
-#   event_summary %>%
-#     dplyr::select(site, event_id_lf, event_start_date, event_end_date, duration_days) %>%
-#     dplyr::filter(!is.na(event_start_date), !is.na(event_end_date)) %>%
-#     dplyr::arrange(site, event_start_date) %>%
-#     dplyr::distinct(site, event_id_lf, event_start_date, event_end_date, .keep_all = TRUE)
-# 
-#   test_keys %>%
-#     dplyr::select(site, date) %>%
-#     inner_join(prep_storm_flags, by = c("site", "date")) %>%
-#     transmute(site, date, storm = "storm") %>%
-#     distinct()
-# }
 
 prep_storm_flags <- function(event_summary, test_keys) {
 
@@ -521,12 +513,18 @@ site_strip_labs <- c(
   F_winters_usgs = "Winters USGS"
 )
 
+
 plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load", 
                      flow_label ="flow lab",
                      color_var = "tsf") {
 
+  df_norm <- df_norm %>% dplyr::ungroup()
+  models_tbl <- models_tbl %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(slope_label = paste0("β = ", round(slope, 2)))
+
   ggplot(df_norm, aes(Q_c_norm, load_c_norm)) +
-        geom_abline(data = models_tbl, aes(slope = slope, intercept = 0),
+    geom_abline(data = models_tbl, aes(slope = slope, intercept = 0),
                 linewidth = 0.5, alpha = 0.8) +
     geom_path(alpha = 0.5, linewidth = 1) +
     geom_point(aes(color = .data[[color_var]]), size = 2.5, alpha = 0.9) +
@@ -534,14 +532,21 @@ plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load",
       data = df_norm %>% filter(storm == "storm"),
       shape = 21, fill = NA, color = "black", stroke = 1.5, size = 3
     ) +
-    scale_color_viridis_c(option = "plasma", direction = -1) +
+    geom_text(
+      data = models_tbl,
+      aes(x = 0.45, y = 0.85, label = slope_label),
+      hjust = 1.05, vjust = -0.5,
+      size = 4,
+      inherit.aes = FALSE
+    ) +
+    scale_color_viridis_c(option = "plasma", direction = -1, name= "Days since fire") +
     facet_wrap(~ site_OL, nrow = 1,
-                   labeller = labeller(site_OL = as_labeller(site_strip_labs))) +
+               labeller = labeller(site_OL = as_labeller(site_strip_labs))) +
     coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
     labs(x = flow_label, y = value_label) +
-        theme_minimal() +
-
-    theme(legend.position = "bottom", panel.grid.minor = element_blank())
+    theme_minimal() +
+    theme(legend.position = "bottom",
+          panel.grid.minor = element_blank())
 }
 ```
 
@@ -705,7 +710,7 @@ plot_cumul_resid <- function(resid_df,
 
 ``` r
 # 1) Prep once
-davis_flow <- prep_flow(new_df_hydro, flow_start = as.Date("2024-09-30"))
+davis_flow <- prep_flow(new_df_hydro, flow_start = as.Date("2024-10-15"), flow_end = as.Date("2025-12-11"))
 storm <- prep_storm_flags(event_summary, test_keys)
 
 # optional: flow summary
@@ -721,11 +726,11 @@ davis_flow %>%
     ## # A tibble: 5 × 3
     ##   site         max_Q_c_liters max_ppt_daily_cum
     ##   <chr>                 <dbl>             <dbl>
-    ## 1 browns          1343421091.              853.
-    ## 2 browns_sub      1675946219.              853.
-    ## 3 ophir           5566001875.             1023.
-    ## 4 winters_up       877519366.              875.
-    ## 5 winters_usgs     493066981.              875.
+    ## 1 browns          1108804641.              772.
+    ## 2 browns_sub      1461072463.              772.
+    ## 3 ophir           4882639974.              933.
+    ## 4 winters_up       679303299.              793.
+    ## 5 winters_usgs     382550118.              793.
 
 ``` r
 # 2) Loads for all analytes (one call)
@@ -761,11 +766,11 @@ yield_m3
     ## # A tibble: 5 × 4
     ##   site         total_liters total_m3 total_m3_sci
     ##   <chr>               <dbl>    <dbl> <chr>       
-    ## 1 browns         994061600.  994062. 9.94e+05    
-    ## 2 browns_sub    1299534423. 1299534. 1.30e+06    
-    ## 3 ophir         4316433824. 4316434. 4.32e+06    
-    ## 4 winters_up     626468615.  626469. 6.26e+05    
-    ## 5 winters_usgs   354683074.  354683. 3.55e+05
+    ## 1 browns         966044299.  966044. 9.66e+05    
+    ## 2 browns_sub    1258347336. 1258347. 1.26e+06    
+    ## 3 ophir         4300801506. 4300802. 4.30e+06    
+    ## 4 winters_up     613834334.  613834. 6.14e+05    
+    ## 5 winters_usgs   347862237.  347862. 3.48e+05
 
 ## TSS
 
@@ -782,11 +787,11 @@ inference_TSS
     ## # Groups:   site_OL [5]
     ##   site_OL  n_samples slope std_error   lwr   upr  p.value  p_vs_1 interpretation
     ##   <chr>        <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>   <dbl> <chr>         
-    ## 1 A_ophir         23 1.07     0.0255 1.02  1.12  1.69e-22 1.21e-2 Enrichment: l…
-    ## 2 C_brown…        14 0.554    0.101  0.337 0.772 1.01e- 4 6.83e-4 Dilution: dis…
-    ## 3 D_browns        14 0.860    0.0564 0.738 0.982 1.15e- 9 2.72e-2 Dilution: dis…
-    ## 4 E_winte…        17 0.801    0.0638 0.666 0.936 1.06e- 9 6.55e-3 Dilution: dis…
-    ## 5 F_winte…        23 0.864    0.0458 0.769 0.959 4.48e-15 7.08e-3 Dilution: dis…
+    ## 1 A_ophir         23 1.07     0.0258 1.02  1.12  2.23e-22 1.33e-2 Enrichment: l…
+    ## 2 C_brown…        14 0.561    0.100  0.344 0.778 8.77e- 5 7.63e-4 Dilution: dis…
+    ## 3 D_browns        14 0.864    0.0560 0.743 0.985 9.77e-10 3.05e-2 Dilution: dis…
+    ## 4 E_winte…        17 0.806    0.0626 0.674 0.939 7.31e-10 6.99e-3 Dilution: dis…
+    ## 5 F_winte…        23 0.845    0.0521 0.737 0.953 1.01e-13 7.00e-3 Dilution: dis…
 
 ``` r
 TSS_resid <- calc_cumul_resid(TSS_fit$df, TSS_fit$models)
@@ -799,10 +804,10 @@ bp_TSS
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
     ## 1 A_ophir        <tibble>     NA     NA                1.10    NA          NA   
-    ## 2 C_browns_sub   <tibble>      0.850 2025-09-24        0.703    5.65        4.95
-    ## 3 D_browns       <tibble>     NA     NA                1.52    NA          NA   
-    ## 4 E_winters_up   <tibble>      0.559 2025-04-02        0.260    2.09        1.83
-    ## 5 F_winters_usgs <tibble>      0.558 2025-04-02        0.188    1.98        1.80
+    ## 2 C_browns_sub   <tibble>      0.846 2025-09-24        0.683    5.49        4.81
+    ## 3 D_browns       <tibble>     NA     NA                1.49    NA          NA   
+    ## 4 E_winters_up   <tibble>      0.550 2025-04-02        0.255    2.04        1.79
+    ## 5 F_winters_usgs <tibble>      0.549 2025-04-02        0.196    2.06        1.87
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 ## DOC dynamics
@@ -820,11 +825,11 @@ inference_DOC
     ## # Groups:   site_OL [5]
     ##   site_OL  n_samples slope std_error   lwr   upr  p.value  p_vs_1 interpretation
     ##   <chr>        <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>   <dbl> <chr>         
-    ## 1 A_ophir         24 1.02    0.00611 1.00  1.03  6.16e-37 1.69e-2 Enrichment: l…
-    ## 2 C_brown…        15 1.05    0.0153  1.02  1.09  3.93e-19 3.98e-3 Enrichment: l…
-    ## 3 D_browns        15 0.967   0.00792 0.950 0.984 1.34e-22 1.03e-3 Dilution: dis…
-    ## 4 E_winte…        18 0.947   0.0120  0.922 0.973 3.12e-23 4.03e-4 Dilution: dis…
-    ## 5 F_winte…        23 0.995   0.00859 0.977 1.01  3.83e-32 5.32e-1 Proportional:…
+    ## 1 A_ophir         24 1.01    0.00417 1.00  1.02  1.04e-40 5.07e-3 Enrichment: l…
+    ## 2 C_brown…        15 1.05    0.0155  1.02  1.09  4.85e-19 4.46e-3 Enrichment: l…
+    ## 3 D_browns        15 0.967   0.00803 0.950 0.985 1.61e-22 1.14e-3 Dilution: dis…
+    ## 4 E_winte…        18 0.948   0.0120  0.922 0.973 2.91e-23 4.25e-4 Dilution: dis…
+    ## 5 F_winte…        23 0.990   0.0105  0.969 1.01  3.20e-30 3.60e-1 Proportional:…
 
 ``` r
 DOC_resid <- calc_cumul_resid(DOC_fit$df, DOC_fit$models)
@@ -836,11 +841,11 @@ bp_DOC
     ## # Groups:   site_OL [5]
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
-    ## 1 A_ophir        <tibble>      0.235 2025-03-12        1.07    0.964      -0.111
-    ## 2 C_browns_sub   <tibble>     NA     NA                0.853  NA          NA    
-    ## 3 D_browns       <tibble>      0.870 2025-09-24        1.000   1.40        0.403
-    ## 4 E_winters_up   <tibble>      0.832 2025-07-14        0.922   1.65        0.726
-    ## 5 F_winters_usgs <tibble>      0.236 2025-01-22        0.631   1.10        0.469
+    ## 1 A_ophir        <tibble>      0.232 2025-03-12        1.09    0.976      -0.112
+    ## 2 C_browns_sub   <tibble>     NA     NA                0.859  NA          NA    
+    ## 3 D_browns       <tibble>      0.866 2025-09-24        0.997   1.40        0.401
+    ## 4 E_winters_up   <tibble>      0.829 2025-07-14        0.917   1.64        0.722
+    ## 5 F_winters_usgs <tibble>      0.222 2025-01-22        0.641   1.12        0.476
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 ## TDN dynamics
@@ -858,11 +863,11 @@ inference_TDN
     ## # Groups:   site_OL [5]
     ##   site_OL  n_samples slope std_error   lwr   upr  p.value  p_vs_1 interpretation
     ##   <chr>        <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>   <dbl> <chr>         
-    ## 1 A_ophir         24 1.05     0.0115 1.02   1.07 6.67e-31 3.48e-4 Enrichment: l…
-    ## 2 C_brown…        15 1.06     0.0155 1.03   1.10 4.51e-19 1.36e-3 Enrichment: l…
-    ## 3 D_browns        15 0.951    0.0410 0.863  1.04 1.43e-12 2.52e-1 Proportional:…
-    ## 4 E_winte…        18 0.956    0.0240 0.906  1.01 3.12e-18 8.61e-2 Proportional:…
-    ## 5 F_winte…        23 0.999    0.0210 0.955  1.04 1.16e-23 9.49e-1 Proportional:…
+    ## 1 A_ophir         24 1.05     0.0118 1.02   1.07 1.20e-30 8.85e-4 Enrichment: l…
+    ## 2 C_brown…        15 1.06     0.0161 1.03   1.10 6.75e-19 1.21e-3 Enrichment: l…
+    ## 3 D_browns        15 0.955    0.0406 0.868  1.04 1.18e-12 2.91e-1 Proportional:…
+    ## 4 E_winte…        18 0.959    0.0234 0.909  1.01 2.02e-18 9.73e-2 Proportional:…
+    ## 5 F_winte…        23 0.999    0.0219 0.953  1.04 2.66e-23 9.53e-1 Proportional:…
 
 ``` r
 TDN_resid <- calc_cumul_resid(TDN_fit$df, TDN_fit$models)
@@ -874,11 +879,11 @@ bp_TDN
     ## # Groups:   site_OL [5]
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
-    ## 1 A_ophir        <tibble>      0.233 2025-03-12        0.675   1.13        0.460
-    ## 2 C_browns_sub   <tibble>      0.756 2025-07-14        1.41    0.526      -0.882
-    ## 3 D_browns       <tibble>     NA     NA                1.48   NA          NA    
-    ## 4 E_winters_up   <tibble>     NA     NA                1.23   NA          NA    
-    ## 5 F_winters_usgs <tibble>      0.351 2025-02-19        0.509   1.32        0.809
+    ## 1 A_ophir        <tibble>      0.230 2025-03-12        0.687   1.16        0.468
+    ## 2 C_browns_sub   <tibble>      0.748 2025-07-14        1.41    0.525      -0.881
+    ## 3 D_browns       <tibble>     NA     NA                1.46   NA          NA    
+    ## 4 E_winters_up   <tibble>     NA     NA                1.22   NA          NA    
+    ## 5 F_winters_usgs <tibble>      0.373 2025-02-19        0.566   1.34        0.776
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 ### PO4 dynamics
@@ -896,11 +901,11 @@ inference_PO4
     ## # Groups:   site_OL [5]
     ##   site_OL   n_samples slope std_error   lwr   upr  p.value p_vs_1 interpretation
     ##   <chr>         <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>  <dbl> <chr>         
-    ## 1 A_ophir          21 0.992   0.00893 0.973  1.01 2.15e-29 0.381  Proportional:…
-    ## 2 C_browns…        12 1.10    0.0387  1.01   1.18 1.19e-11 0.0260 Enrichment: l…
-    ## 3 D_browns         10 0.954   0.0462  0.849  1.06 6.84e- 9 0.342  Proportional:…
-    ## 4 E_winter…        15 0.990   0.0195  0.948  1.03 2.74e-17 0.623  Proportional:…
-    ## 5 F_winter…        20 0.988   0.0123  0.962  1.01 1.61e-25 0.346  Proportional:…
+    ## 1 A_ophir          21 0.988   0.00982 0.968  1.01 1.55e-28 0.239  Proportional:…
+    ## 2 C_browns…        12 1.10    0.0401  1.01   1.19 1.75e-11 0.0286 Enrichment: l…
+    ## 3 D_browns         10 0.954   0.0471  0.848  1.06 8.14e- 9 0.359  Proportional:…
+    ## 4 E_winter…        15 0.988   0.0196  0.946  1.03 3.07e-17 0.557  Proportional:…
+    ## 5 F_winter…        20 0.985   0.0132  0.957  1.01 6.32e-25 0.258  Proportional:…
 
 ``` r
 PO4_resid <- calc_cumul_resid(PO4_fit$df, PO4_fit$models)
@@ -912,11 +917,11 @@ bp_PO4
     ## # Groups:   site_OL [5]
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
-    ## 1 A_ophir        <tibble>      0.261 2025-03-12        0.710   1.08        0.366
-    ## 2 C_browns_sub   <tibble>      0.536 2025-04-16        2.04    0.431      -1.61 
-    ## 3 D_browns       <tibble>     NA     NA                1.28   NA          NA    
-    ## 4 E_winters_up   <tibble>      0.821 2025-06-17        0.640   1.56        0.919
-    ## 5 F_winters_usgs <tibble>      0.600 2025-04-16        0.814   1.26        0.445
+    ## 1 A_ophir        <tibble>      0.259 2025-03-12        0.721   1.09        0.372
+    ## 2 C_browns_sub   <tibble>      0.521 2025-04-16        2.06    0.434      -1.62 
+    ## 3 D_browns       <tibble>     NA     NA                1.27   NA          NA    
+    ## 4 E_winters_up   <tibble>      0.818 2025-06-17        0.644   1.57        0.924
+    ## 5 F_winters_usgs <tibble>      0.592 2025-04-16        0.824   1.27        0.450
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 ### Al dynamics
@@ -934,11 +939,11 @@ inference_Al
     ## # Groups:   site_OL [5]
     ##   site_OL   n_samples slope std_error   lwr   upr  p.value p_vs_1 interpretation
     ##   <chr>         <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>  <dbl> <chr>         
-    ## 1 A_ophir          24 0.967    0.0125 0.941 0.993 2.59e-29 0.0149 Dilution: dis…
-    ## 2 C_browns…        15 0.902    0.0470 0.802 1.00  1.88e-11 0.0570 Proportional:…
-    ## 3 D_browns         15 0.934    0.0336 0.862 1.01  1.17e-13 0.0710 Proportional:…
-    ## 4 E_winter…        18 0.996    0.0305 0.932 1.06  8.77e-17 0.901  Proportional:…
-    ## 5 F_winter…        23 0.956    0.0321 0.890 1.02  2.75e-19 0.186  Proportional:…
+    ## 1 A_ophir          24 0.966    0.0131 0.939 0.993 7.36e-29 0.0161 Dilution: dis…
+    ## 2 C_browns…        15 0.907    0.0466 0.808 1.01  1.53e-11 0.0669 Proportional:…
+    ## 3 D_browns         15 0.938    0.0333 0.866 1.01  1.01e-13 0.0818 Proportional:…
+    ## 4 E_winter…        18 0.999    0.0300 0.936 1.06  6.35e-17 0.985  Proportional:…
+    ## 5 F_winter…        23 0.961    0.0308 0.897 1.03  1.06e-19 0.223  Proportional:…
 
 ``` r
 Al_resid <- calc_cumul_resid(Al_fit$df, Al_fit$models)
@@ -950,11 +955,11 @@ bp_Al
     ## # Groups:   site_OL [5]
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
-    ## 1 A_ophir        <tibble>      0.240 2025-03-12        0.561    1.13       0.566
-    ## 2 C_browns_sub   <tibble>     NA     NA                1.51    NA         NA    
-    ## 3 D_browns       <tibble>     NA     NA                1.38    NA         NA    
-    ## 4 E_winters_up   <tibble>     NA     NA                1.34    NA         NA    
-    ## 5 F_winters_usgs <tibble>      0.443 2025-03-12        0.474    1.54       1.07 
+    ## 1 A_ophir        <tibble>      0.237 2025-03-12        0.563    1.13       0.568
+    ## 2 C_browns_sub   <tibble>     NA     NA                1.49    NA         NA    
+    ## 3 D_browns       <tibble>     NA     NA                1.36    NA         NA    
+    ## 4 E_winters_up   <tibble>     NA     NA                1.33    NA         NA    
+    ## 5 F_winters_usgs <tibble>      0.433 2025-03-12        0.467    1.52       1.05 
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 ### As dynamics
@@ -972,11 +977,11 @@ inference_As
     ## # Groups:   site_OL [5]
     ##   site_OL  n_samples slope std_error   lwr   upr  p.value  p_vs_1 interpretation
     ##   <chr>        <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>   <dbl> <chr>         
-    ## 1 A_ophir         24 1.01    0.00976 0.989 1.03  3.41e-32 3.66e-1 Proportional:…
-    ## 2 C_brown…        15 1.05    0.0105  1.03  1.07  2.16e-21 2.21e-4 Enrichment: l…
-    ## 3 D_browns        15 0.971   0.0122  0.944 0.997 5.40e-20 3.00e-2 Dilution: dis…
-    ## 4 E_winte…        18 0.951   0.0143  0.921 0.981 5.58e-22 3.20e-3 Dilution: dis…
-    ## 5 F_winte…        23 0.939   0.0243  0.889 0.990 9.94e-22 2.03e-2 Dilution: dis…
+    ## 1 A_ophir         24 1.00     0.0112 0.980 1.03  8.49e-31 7.59e-1 Proportional:…
+    ## 2 C_brown…        15 1.05     0.0107 1.03  1.08  2.77e-21 2.38e-4 Enrichment: l…
+    ## 3 D_browns        15 0.970    0.0125 0.944 0.997 7.69e-20 3.32e-2 Dilution: dis…
+    ## 4 E_winte…        18 0.951    0.0146 0.920 0.981 7.65e-22 3.49e-3 Dilution: dis…
+    ## 5 F_winte…        23 0.940    0.0246 0.889 0.991 1.26e-21 2.29e-2 Dilution: dis…
 
 ``` r
 As_resid <- calc_cumul_resid(As_fit$df, As_fit$models)
@@ -988,11 +993,11 @@ bp_As
     ## # Groups:   site_OL [5]
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
-    ## 1 A_ophir        <tibble>      0.464 2025-04-16        0.790    1.21       0.419
-    ## 2 C_browns_sub   <tibble>     NA     NA                0.925   NA         NA    
-    ## 3 D_browns       <tibble>      0.706 2025-06-17        0.878    1.33       0.451
-    ## 4 E_winters_up   <tibble>      0.810 2025-06-17        0.819    1.74       0.921
-    ## 5 F_winters_usgs <tibble>      0.570 2025-04-02        0.659    1.54       0.877
+    ## 1 A_ophir        <tibble>      0.206 2025-03-12        0.626    1.12       0.496
+    ## 2 C_browns_sub   <tibble>     NA     NA                0.930   NA         NA    
+    ## 3 D_browns       <tibble>      0.698 2025-06-17        0.876    1.33       0.451
+    ## 4 E_winters_up   <tibble>      0.806 2025-06-17        0.817    1.74       0.919
+    ## 5 F_winters_usgs <tibble>      0.496 2025-04-02        0.601    1.44       0.841
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 ### B dynamics
@@ -1008,13 +1013,13 @@ inference_B
 
     ## # A tibble: 5 × 9
     ## # Groups:   site_OL [5]
-    ##   site_OL  n_samples slope std_error   lwr   upr  p.value  p_vs_1 interpretation
-    ##   <chr>        <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>   <dbl> <chr>         
-    ## 1 A_ophir         24 1.11     0.0563 0.989 1.22  7.27e-16 0.0744  Proportional:…
-    ## 2 C_brown…        15 0.984    0.0153 0.951 1.02  1.05e-18 0.304   Proportional:…
-    ## 3 D_browns        15 0.951    0.0173 0.913 0.988 9.56e-18 0.0127  Dilution: dis…
-    ## 4 E_winte…        18 1.10     0.0507 0.991 1.20  8.05e-14 0.0703  Proportional:…
-    ## 5 F_winte…        23 1.12     0.0424 1.03  1.21  3.56e-18 0.00858 Enrichment: l…
+    ##   site_OL   n_samples slope std_error   lwr   upr  p.value p_vs_1 interpretation
+    ##   <chr>         <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>  <dbl> <chr>         
+    ## 1 A_ophir          24 1.10     0.0563 0.988 1.22  7.33e-16 0.0761 Proportional:…
+    ## 2 C_browns…        15 0.982    0.0158 0.948 1.02  1.63e-18 0.264  Proportional:…
+    ## 3 D_browns         15 0.948    0.0178 0.910 0.986 1.50e-17 0.0110 Dilution: dis…
+    ## 4 E_winter…        18 1.10     0.0509 0.988 1.20  8.99e-14 0.0790 Proportional:…
+    ## 5 F_winter…        23 1.13     0.0446 1.03  1.22  1.00e-17 0.0104 Enrichment: l…
 
 ``` r
 B_resid <- calc_cumul_resid(B_fit$df, B_fit$models)
@@ -1026,11 +1031,11 @@ bp_B
     ## # Groups:   site_OL [5]
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
-    ## 1 A_ophir        <tibble>      0.275 2025-04-02        2.48    0.356      -2.12 
-    ## 2 C_browns_sub   <tibble>     NA     NA                0.874  NA          NA    
-    ## 3 D_browns       <tibble>      0.759 2025-07-14        0.605   1.37        0.766
-    ## 4 E_winters_up   <tibble>     NA     NA                0.475  NA          NA    
-    ## 5 F_winters_usgs <tibble>      0.322 2025-02-02        2.10    0.502      -1.60 
+    ## 1 A_ophir        <tibble>      0.273 2025-04-02        2.48    0.357      -2.13 
+    ## 2 C_browns_sub   <tibble>     NA     NA                0.877  NA          NA    
+    ## 3 D_browns       <tibble>      0.752 2025-07-14        0.607   1.38        0.768
+    ## 4 E_winters_up   <tibble>     NA     NA                0.487  NA          NA    
+    ## 5 F_winters_usgs <tibble>      0.309 2025-02-02        2.08    0.496      -1.58 
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 ### Ba dynamics
@@ -1048,11 +1053,11 @@ inference_Ba
     ## # Groups:   site_OL [5]
     ##   site_OL  n_samples slope std_error   lwr   upr  p.value  p_vs_1 interpretation
     ##   <chr>        <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>   <dbl> <chr>         
-    ## 1 A_ophir         24 1.00    0.00266 0.995 1.01  4.34e-45 0.746   Proportional:…
-    ## 2 C_brown…        15 1.08    0.0234  1.03  1.13  1.08e-16 0.00411 Enrichment: l…
-    ## 3 D_browns        15 0.997   0.00889 0.978 1.02  4.39e-22 0.746   Proportional:…
-    ## 4 E_winte…        18 0.983   0.00480 0.972 0.993 2.81e-30 0.00205 Dilution: dis…
-    ## 5 F_winte…        23 0.995   0.00638 0.982 1.01  5.49e-35 0.430   Proportional:…
+    ## 1 A_ophir         24 1.00    0.00242 0.997 1.01  4.74e-46 0.498   Proportional:…
+    ## 2 C_brown…        15 1.08    0.0240  1.03  1.13  1.48e-16 0.00463 Enrichment: l…
+    ## 3 D_browns        15 0.996   0.00903 0.977 1.02  5.52e-22 0.668   Proportional:…
+    ## 4 E_winte…        18 0.982   0.00492 0.972 0.993 4.23e-30 0.00225 Dilution: dis…
+    ## 5 F_winte…        23 0.997   0.00586 0.984 1.01  8.19e-36 0.565   Proportional:…
 
 ``` r
 Ba_resid <- calc_cumul_resid(Ba_fit$df, Ba_fit$models)
@@ -1064,11 +1069,11 @@ bp_Ba
     ## # Groups:   site_OL [5]
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
-    ## 1 A_ophir        <tibble>     NA     NA                1.01   NA          NA    
-    ## 2 C_browns_sub   <tibble>      0.570 2025-05-14        1.24    0.614      -0.625
-    ## 3 D_browns       <tibble>      0.837 2025-08-19        0.842   1.14        0.299
-    ## 4 E_winters_up   <tibble>      0.832 2025-07-14        0.926   1.25        0.328
-    ## 5 F_winters_usgs <tibble>      0.180 2024-11-23        0.779   1.06        0.281
+    ## 1 A_ophir        <tibble>     NA     NA                1.00   NA          NA    
+    ## 2 C_browns_sub   <tibble>      0.557 2025-05-14        1.25    0.619      -0.631
+    ## 3 D_browns       <tibble>      0.833 2025-08-19        0.844   1.14        0.300
+    ## 4 E_winters_up   <tibble>      0.829 2025-07-14        0.925   1.25        0.328
+    ## 5 F_winters_usgs <tibble>      0.164 2024-11-23        0.775   1.05        0.279
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 ### Ca dynamics
@@ -1086,11 +1091,11 @@ inference_Ca
     ## # Groups:   site_OL [5]
     ##   site_OL  n_samples slope std_error   lwr   upr  p.value  p_vs_1 interpretation
     ##   <chr>        <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>   <dbl> <chr>         
-    ## 1 A_ophir         24 1.02    0.00725 1.00  1.03  2.99e-35 1.55e-2 Enrichment: l…
-    ## 2 C_brown…        15 1.02    0.00519 1.01  1.03  1.77e-25 4.57e-3 Enrichment: l…
-    ## 3 D_browns        15 0.977   0.00587 0.964 0.989 1.77e-24 1.33e-3 Dilution: dis…
-    ## 4 E_winte…        18 0.936   0.0119  0.911 0.962 3.36e-23 5.51e-5 Dilution: dis…
-    ## 5 F_winte…        23 0.962   0.0130  0.935 0.989 6.85e-28 7.87e-3 Dilution: dis…
+    ## 1 A_ophir         24 1.02    0.00682 1.01  1.03  7.07e-36 7.84e-3 Enrichment: l…
+    ## 2 C_brown…        15 1.02    0.00540 1.01  1.03  3.09e-25 4.45e-3 Enrichment: l…
+    ## 3 D_browns        15 0.976   0.00604 0.963 0.989 2.68e-24 1.48e-3 Dilution: dis…
+    ## 4 E_winte…        18 0.936   0.0120  0.911 0.962 3.88e-23 5.81e-5 Dilution: dis…
+    ## 5 F_winte…        23 0.963   0.0129  0.936 0.990 6.06e-28 8.82e-3 Dilution: dis…
 
 ``` r
 Ca_resid <- calc_cumul_resid(Ca_fit$df, Ca_fit$models)
@@ -1102,11 +1107,11 @@ bp_Ca
     ## # Groups:   site_OL [5]
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
-    ## 1 A_ophir        <tibble>      0.128 2025-02-02        0.680   1.08        0.404
-    ## 2 C_browns_sub   <tibble>      0.599 2025-05-14        1.21    0.910      -0.302
-    ## 3 D_browns       <tibble>      0.774 2025-07-14        0.909   1.22        0.311
-    ## 4 E_winters_up   <tibble>      0.799 2025-06-17        0.867   1.58        0.713
-    ## 5 F_winters_usgs <tibble>      0.333 2025-02-19        0.677   1.16        0.479
+    ## 1 A_ophir        <tibble>      0.125 2025-02-02        0.677   1.08        0.403
+    ## 2 C_browns_sub   <tibble>      0.587 2025-05-14        1.21    0.910      -0.302
+    ## 3 D_browns       <tibble>      0.768 2025-07-14        0.908   1.22        0.311
+    ## 4 E_winters_up   <tibble>      0.795 2025-06-17        0.864   1.57        0.711
+    ## 5 F_winters_usgs <tibble>      0.320 2025-02-19        0.675   1.15        0.477
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 ### Cr dynamics
@@ -1124,11 +1129,11 @@ inference_Cr
     ## # Groups:   site_OL [5]
     ##   site_OL n_samples slope std_error   lwr   upr  p.value   p_vs_1 interpretation
     ##   <chr>       <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>    <dbl> <chr>         
-    ## 1 A_ophir        24 1.01    0.00548 1.000 1.02  5.58e-38 5.70e- 2 Proportional:…
-    ## 2 C_brow…        15 0.548   0.0442  0.453 0.642 6.09e- 9 6.93e- 8 Dilution: dis…
-    ## 3 D_brow…        15 0.977   0.00579 0.965 0.990 1.44e-24 1.54e- 3 Dilution: dis…
-    ## 4 E_wint…        18 0.262   0.0578  0.140 0.384 2.96e- 4 3.83e-10 Dilution: dis…
-    ## 5 F_wint…        23 0.505   0.0360  0.430 0.580 1.91e-12 2.85e-12 Dilution: dis…
+    ## 1 A_ophir        24 1.01    0.00434 0.997 1.02  3.00e-40 1.55e- 1 Proportional:…
+    ## 2 C_brow…        15 0.542   0.0451  0.446 0.639 9.15e- 9 7.81e- 8 Dilution: dis…
+    ## 3 D_brow…        15 0.977   0.00595 0.964 0.990 2.13e-24 1.71e- 3 Dilution: dis…
+    ## 4 E_wint…        18 0.260   0.0582  0.138 0.383 3.32e- 4 4.14e-10 Dilution: dis…
+    ## 5 F_wint…        23 0.503   0.0364  0.427 0.578 2.51e-12 3.15e-12 Dilution: dis…
 
 ``` r
 Cr_resid <- calc_cumul_resid(Cr_fit$df, Cr_fit$models)
@@ -1140,11 +1145,11 @@ bp_Cr
     ## # Groups:   site_OL [5]
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
-    ## 1 A_ophir        <tibble>     NA     NA                0.991   NA         NA    
-    ## 2 C_browns_sub   <tibble>      0.947 2025-11-19        0.485   10.2        9.70 
-    ## 3 D_browns       <tibble>      0.818 2025-08-19        0.957    1.25       0.298
-    ## 4 E_winters_up   <tibble>      0.959 2025-11-19        0.216   20.0       19.8  
-    ## 5 F_winters_usgs <tibble>      0.956 2025-11-19        0.470   12.8       12.4  
+    ## 1 A_ophir        <tibble>     NA     NA                1.01    NA         NA    
+    ## 2 C_browns_sub   <tibble>      0.945 2025-11-19        0.478   10.0        9.56 
+    ## 3 D_browns       <tibble>      0.813 2025-08-19        0.956    1.25       0.297
+    ## 4 E_winters_up   <tibble>      0.958 2025-11-19        0.212   19.7       19.5  
+    ## 5 F_winters_usgs <tibble>      0.955 2025-11-19        0.465   12.7       12.2  
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 ### Fe dynamics
@@ -1162,11 +1167,11 @@ inference_Fe
     ## # Groups:   site_OL [5]
     ##   site_OL  n_samples slope std_error   lwr   upr  p.value  p_vs_1 interpretation
     ##   <chr>        <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>   <dbl> <chr>         
-    ## 1 A_ophir         24 0.998    0.0257 0.945 1.05  1.85e-22 9.31e-1 Proportional:…
-    ## 2 C_brown…        15 0.639    0.0830 0.461 0.817 2.11e- 6 6.69e-4 Dilution: dis…
-    ## 3 D_browns        15 0.882    0.0372 0.802 0.962 1.05e-12 6.69e-3 Dilution: dis…
-    ## 4 E_winte…        18 0.764    0.0414 0.677 0.852 1.12e-12 2.66e-5 Dilution: dis…
-    ## 5 F_winte…        23 0.843    0.0436 0.753 0.934 2.73e-15 1.64e-3 Dilution: dis…
+    ## 1 A_ophir         24 0.999    0.0254 0.946 1.05  1.35e-22 9.61e-1 Proportional:…
+    ## 2 C_brown…        15 0.646    0.0824 0.470 0.823 1.72e- 6 7.46e-4 Dilution: dis…
+    ## 3 D_browns        15 0.883    0.0374 0.803 0.963 1.10e-12 7.48e-3 Dilution: dis…
+    ## 4 E_winte…        18 0.764    0.0418 0.675 0.852 1.31e-12 2.86e-5 Dilution: dis…
+    ## 5 F_winte…        23 0.846    0.0435 0.756 0.936 2.35e-15 1.83e-3 Dilution: dis…
 
 ``` r
 Fe_resid <- calc_cumul_resid(Fe_fit$df, Fe_fit$models)
@@ -1178,11 +1183,11 @@ bp_Fe
     ## # Groups:   site_OL [5]
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
-    ## 1 A_ophir        <tibble>      0.516 2025-05-14       0.594     1.64        1.04
-    ## 2 C_browns_sub   <tibble>      0.653 2025-06-17       0.0558    2.83        2.77
-    ## 3 D_browns       <tibble>      0.668 2025-06-17       0.725     1.85        1.12
-    ## 4 E_winters_up   <tibble>      0.810 2025-06-17       0.491     3.23        2.74
-    ## 5 F_winters_usgs <tibble>      0.694 2025-05-14       0.453     2.51        2.06
+    ## 1 A_ophir        <tibble>      0.514 2025-05-14       0.592     1.63        1.04
+    ## 2 C_browns_sub   <tibble>      0.643 2025-06-17       0.0543    2.75        2.69
+    ## 3 D_browns       <tibble>      0.659 2025-06-17       0.717     1.83        1.11
+    ## 4 E_winters_up   <tibble>      0.807 2025-06-17       0.486     3.20        2.72
+    ## 5 F_winters_usgs <tibble>      0.688 2025-05-14       0.448     2.49        2.04
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 ### Mn dynamics
@@ -1200,11 +1205,11 @@ inference_Mn
     ## # Groups:   site_OL [5]
     ##   site_OL  n_samples slope std_error   lwr   upr  p.value  p_vs_1 interpretation
     ##   <chr>        <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>   <dbl> <chr>         
-    ## 1 A_ophir         24 1.03     0.0113 1.01  1.05  5.88e-31 1.28e-2 Enrichment: l…
-    ## 2 C_brown…        15 0.752    0.0547 0.635 0.870 1.58e- 9 4.74e-4 Dilution: dis…
-    ## 3 D_browns        15 0.889    0.0280 0.829 0.949 1.93e-14 1.39e-3 Dilution: dis…
-    ## 4 E_winte…        18 0.852    0.0190 0.812 0.892 4.12e-19 5.21e-7 Dilution: dis…
-    ## 5 F_winte…        23 0.923    0.0145 0.893 0.953 1.89e-26 2.30e-5 Dilution: dis…
+    ## 1 A_ophir         24 1.03     0.0110 1.01  1.05  3.34e-31 9.26e-3 Enrichment: l…
+    ## 2 C_brown…        15 0.756    0.0546 0.639 0.873 1.47e- 9 5.22e-4 Dilution: dis…
+    ## 3 D_browns        15 0.889    0.0282 0.829 0.950 2.08e-14 1.52e-3 Dilution: dis…
+    ## 4 E_winte…        18 0.850    0.0194 0.809 0.891 6.30e-19 5.60e-7 Dilution: dis…
+    ## 5 F_winte…        23 0.924    0.0141 0.895 0.953 9.59e-27 2.02e-5 Dilution: dis…
 
 ``` r
 Mn_resid <- calc_cumul_resid(Mn_fit$df, Mn_fit$models)
@@ -1216,11 +1221,11 @@ bp_Mn
     ## # Groups:   site_OL [5]
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
-    ## 1 A_ophir        <tibble>      0.242 2025-03-12        0.740    1.15       0.407
-    ## 2 C_browns_sub   <tibble>      0.644 2025-06-17        0.489    2.09       1.60 
-    ## 3 D_browns       <tibble>      0.671 2025-06-17        0.815    1.61       0.794
-    ## 4 E_winters_up   <tibble>      0.870 2025-08-19        0.690    2.64       1.95 
-    ## 5 F_winters_usgs <tibble>      0.573 2025-04-16        0.776    1.28       0.499
+    ## 1 A_ophir        <tibble>      0.239 2025-03-12        0.738    1.14       0.406
+    ## 2 C_browns_sub   <tibble>      0.633 2025-06-17        0.479    2.05       1.57 
+    ## 3 D_browns       <tibble>      0.662 2025-06-17        0.807    1.59       0.787
+    ## 4 E_winters_up   <tibble>      0.868 2025-08-19        0.689    2.64       1.95 
+    ## 5 F_winters_usgs <tibble>      0.565 2025-04-16        0.770    1.27       0.496
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 ### Pb dynamics
@@ -1238,11 +1243,11 @@ inference_Pb
     ## # Groups:   site_OL [5]
     ##   site_OL n_samples slope std_error   lwr   upr   p.value  p_vs_1 interpretation
     ##   <chr>       <int> <dbl>     <dbl> <dbl> <dbl>     <dbl>   <dbl> <chr>         
-    ## 1 A_ophir        24 1      3.76e-17 1      1    0         1   e+0 Proportional:…
-    ## 2 C_brow…        15 1      4.96e-17 1      1    1.21e-221 5.24e-4 Enrichment: l…
-    ## 3 D_brow…        15 1      5.87e-17 1      1    1.29e-220 2.03e-3 Enrichment: l…
-    ## 4 E_wint…        18 0.985  1.18e- 2 0.960  1.01 1.15e- 23 2.11e-1 Proportional:…
-    ## 5 F_wint…        23 1      3.54e-17 1      1    0         4.82e-3 Dilution: dis…
+    ## 1 A_ophir        24 1      1.88e-17 1      1    0         1   e+0 Proportional:…
+    ## 2 C_brow…        15 1      4.41e-17 1      1    2.33e-222 2.46e-2 Dilution: dis…
+    ## 3 D_brow…        15 1      3.72e-17 1      1    2.18e-223 9.92e-3 Dilution: dis…
+    ## 4 E_wint…        18 0.985  1.19e- 2 0.960  1.01 1.39e- 23 2.29e-1 Proportional:…
+    ## 5 F_wint…        23 1      4.67e-17 1      1    0         9.45e-5 Enrichment: l…
 
 ``` r
 Pb_resid <- calc_cumul_resid(Pb_fit$df, Pb_fit$models)
@@ -1254,11 +1259,11 @@ bp_Pb
     ## # Groups:   site_OL [5]
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
-    ## 1 A_ophir        <tibble>      0.815 2025-06-17        1        1          0    
-    ## 2 C_browns_sub   <tibble>      0.800 2025-08-01        1        1          0    
+    ## 1 A_ophir        <tibble>      0.641 2025-05-14        1        1          0    
+    ## 2 C_browns_sub   <tibble>     NA     NA                1       NA         NA    
     ## 3 D_browns       <tibble>     NA     NA                1       NA         NA    
-    ## 4 E_winters_up   <tibble>      0.673 2025-05-14        0.891    1.31       0.421
-    ## 5 F_winters_usgs <tibble>      0.920 2025-10-20        1        1          0    
+    ## 4 E_winters_up   <tibble>      0.667 2025-05-14        0.889    1.31       0.420
+    ## 5 F_winters_usgs <tibble>      0.684 2025-05-14        1        1          0    
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 ### Sr dynamics
@@ -1276,11 +1281,11 @@ inference_Sr
     ## # Groups:   site_OL [5]
     ##   site_OL  n_samples slope std_error   lwr   upr  p.value  p_vs_1 interpretation
     ##   <chr>        <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>   <dbl> <chr>         
-    ## 1 A_ophir         24 0.982   0.00318 0.976 0.989 4.02e-43 1.26e-5 Dilution: dis…
-    ## 2 C_brown…        15 1.04    0.0138  1.01  1.07  1.12e-19 1.18e-2 Enrichment: l…
-    ## 3 D_browns        15 0.984   0.00655 0.969 0.998 7.46e-24 2.47e-2 Dilution: dis…
-    ## 4 E_winte…        18 0.976   0.00552 0.964 0.988 3.34e-29 4.29e-4 Dilution: dis…
-    ## 5 F_winte…        23 0.974   0.00504 0.964 0.985 4.86e-37 3.81e-5 Dilution: dis…
+    ## 1 A_ophir         24 0.983   0.00303 0.977 0.989 1.36e-43 1.26e-5 Dilution: dis…
+    ## 2 C_brown…        15 1.04    0.0141  1.01  1.07  1.51e-19 1.35e-2 Enrichment: l…
+    ## 3 D_browns        15 0.983   0.00671 0.968 0.997 1.05e-23 2.09e-2 Dilution: dis…
+    ## 4 E_winte…        18 0.975   0.00564 0.963 0.987 4.97e-29 4.23e-4 Dilution: dis…
+    ## 5 F_winte…        23 0.974   0.00502 0.964 0.985 4.50e-37 3.87e-5 Dilution: dis…
 
 ``` r
 Sr_resid <- calc_cumul_resid(Sr_fit$df, Sr_fit$models)
@@ -1292,11 +1297,11 @@ bp_Sr
     ## # Groups:   site_OL [5]
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
-    ## 1 A_ophir        <tibble>      0.893 2025-10-03        0.981   1.21        0.230
-    ## 2 C_browns_sub   <tibble>      0.578 2025-05-14        1.14    0.762      -0.376
-    ## 3 D_browns       <tibble>      0.829 2025-08-19        0.863   1.21        0.352
-    ## 4 E_winters_up   <tibble>      0.854 2025-08-01        0.903   1.31        0.404
-    ## 5 F_winters_usgs <tibble>      0.276 2025-01-22        0.863   1.03        0.167
+    ## 1 A_ophir        <tibble>      0.892 2025-10-03        0.978   1.21        0.229
+    ## 2 C_browns_sub   <tibble>      0.565 2025-05-14        1.14    0.766      -0.378
+    ## 3 D_browns       <tibble>      0.825 2025-08-19        0.863   1.22        0.352
+    ## 4 E_winters_up   <tibble>      0.851 2025-08-01        0.903   1.31        0.403
+    ## 5 F_winters_usgs <tibble>      0.262 2025-01-22        0.861   1.03        0.167
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 ### B dynamics
@@ -1312,13 +1317,13 @@ inference_B
 
     ## # A tibble: 5 × 9
     ## # Groups:   site_OL [5]
-    ##   site_OL  n_samples slope std_error   lwr   upr  p.value  p_vs_1 interpretation
-    ##   <chr>        <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>   <dbl> <chr>         
-    ## 1 A_ophir         24 1.11     0.0563 0.989 1.22  7.27e-16 0.0744  Proportional:…
-    ## 2 C_brown…        15 0.984    0.0153 0.951 1.02  1.05e-18 0.304   Proportional:…
-    ## 3 D_browns        15 0.951    0.0173 0.913 0.988 9.56e-18 0.0127  Dilution: dis…
-    ## 4 E_winte…        18 1.10     0.0507 0.991 1.20  8.05e-14 0.0703  Proportional:…
-    ## 5 F_winte…        23 1.12     0.0424 1.03  1.21  3.56e-18 0.00858 Enrichment: l…
+    ##   site_OL   n_samples slope std_error   lwr   upr  p.value p_vs_1 interpretation
+    ##   <chr>         <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>  <dbl> <chr>         
+    ## 1 A_ophir          24 1.10     0.0563 0.988 1.22  7.33e-16 0.0761 Proportional:…
+    ## 2 C_browns…        15 0.982    0.0158 0.948 1.02  1.63e-18 0.264  Proportional:…
+    ## 3 D_browns         15 0.948    0.0178 0.910 0.986 1.50e-17 0.0110 Dilution: dis…
+    ## 4 E_winter…        18 1.10     0.0509 0.988 1.20  8.99e-14 0.0790 Proportional:…
+    ## 5 F_winter…        23 1.13     0.0446 1.03  1.22  1.00e-17 0.0104 Enrichment: l…
 
 ``` r
 B_resid <- calc_cumul_resid(B_fit$df, B_fit$models)
@@ -1330,11 +1335,11 @@ bp_B
     ## # Groups:   site_OL [5]
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
-    ## 1 A_ophir        <tibble>      0.275 2025-04-02        2.48    0.356      -2.12 
-    ## 2 C_browns_sub   <tibble>     NA     NA                0.874  NA          NA    
-    ## 3 D_browns       <tibble>      0.759 2025-07-14        0.605   1.37        0.766
-    ## 4 E_winters_up   <tibble>     NA     NA                0.475  NA          NA    
-    ## 5 F_winters_usgs <tibble>      0.322 2025-02-02        2.10    0.502      -1.60 
+    ## 1 A_ophir        <tibble>      0.273 2025-04-02        2.48    0.357      -2.13 
+    ## 2 C_browns_sub   <tibble>     NA     NA                0.877  NA          NA    
+    ## 3 D_browns       <tibble>      0.752 2025-07-14        0.607   1.38        0.768
+    ## 4 E_winters_up   <tibble>     NA     NA                0.487  NA          NA    
+    ## 5 F_winters_usgs <tibble>      0.309 2025-02-02        2.08    0.496      -1.58 
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 ### Zn dynamics
@@ -1352,11 +1357,11 @@ inZnrence_Zn
     ## # Groups:   site_OL [5]
     ##   site_OL  n_samples slope std_error   lwr   upr  p.value  p_vs_1 interpretation
     ##   <chr>        <int> <dbl>     <dbl> <dbl> <dbl>    <dbl>   <dbl> <chr>         
-    ## 1 A_ophir         24 1.00     0.0175 0.968 1.04  2.56e-26 8.14e-1 Proportional:…
-    ## 2 C_brown…        15 0.909    0.0198 0.866 0.951 1.19e-16 4.05e-4 Dilution: dis…
-    ## 3 D_browns        15 0.839    0.0323 0.770 0.908 2.96e-13 2.01e-4 Dilution: dis…
-    ## 4 E_winte…        18 0.757    0.0660 0.617 0.896 2.03e- 9 1.84e-3 Dilution: dis…
-    ## 5 F_winte…        23 0.894    0.0309 0.830 0.958 5.11e-19 2.44e-3 Dilution: dis…
+    ## 1 A_ophir         24 1.00     0.0176 0.967 1.04  2.99e-26 8.30e-1 Proportional:…
+    ## 2 C_brown…        15 0.907    0.0205 0.863 0.951 1.87e-16 4.58e-4 Dilution: dis…
+    ## 3 D_browns        15 0.839    0.0327 0.768 0.909 3.69e-13 2.22e-4 Dilution: dis…
+    ## 4 E_winte…        18 0.760    0.0657 0.622 0.899 1.74e- 9 1.98e-3 Dilution: dis…
+    ## 5 F_winte…        23 0.890    0.0330 0.821 0.958 2.32e-18 2.91e-3 Dilution: dis…
 
 ``` r
 Zn_resid <- calc_cumul_resid(Zn_fit$df, Zn_fit$models)
@@ -1368,11 +1373,11 @@ bp_Zn
     ## # Groups:   site_OL [5]
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
-    ## 1 A_ophir        <tibble>      0.475 2025-04-16        0.624    1.38       0.760
-    ## 2 C_browns_sub   <tibble>      0.862 2025-09-24        0.830    2.12       1.29 
-    ## 3 D_browns       <tibble>      0.858 2025-09-24        0.847    2.81       1.96 
-    ## 4 E_winters_up   <tibble>      0.678 2025-05-14        0.267    2.72       2.45 
-    ## 5 F_winters_usgs <tibble>      0.430 2025-03-12        0.355    1.44       1.08 
+    ## 1 A_ophir        <tibble>      0.474 2025-04-16        0.625    1.39       0.762
+    ## 2 C_browns_sub   <tibble>      0.857 2025-09-24        0.826    2.11       1.28 
+    ## 3 D_browns       <tibble>      0.855 2025-09-24        0.839    2.78       1.94 
+    ## 4 E_winters_up   <tibble>      0.671 2025-05-14        0.262    2.67       2.41 
+    ## 5 F_winters_usgs <tibble>      0.419 2025-03-12        0.358    1.45       1.09 
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 #### 
@@ -1381,14 +1386,6 @@ bp_Zn
 
 #### 
 
-<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-94-1.png" width="85%" />
-
-#### 
-
-<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-96-1.png" width="95%" />
-
-#### 
-
-<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-98-1.png" width="85%" />
+<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-94-1.png" width="95%" />
 
 End of script.

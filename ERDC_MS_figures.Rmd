@@ -83,15 +83,6 @@ site_colors_OL <- c(
   "C_browns_sub"  = "#bd772d"
 )
 
-# site_colors_OL <- c(
-#   "ophir" = "#7d5ba6",
-#   "winters_usgs" = "#4287f5",
-#   "winters_up" = "#7fc5f0",
-#   "davis" = "#d9cb7c",
-#   "browns" = "#c94d00", 
-#   "browns_sub"  = "#bd772d"
-# )
-
 ref_date <-c(as.Date("2024-09-25"))
 ```
 
@@ -470,22 +461,7 @@ Baseflowplot
 ```
 
 
-
 ### Look at run off largest events:
-
-#### A. Biggest peak exceedance
-
-```{r, warning=F, echo=FALSE, include=T}
-# 
-# largest_runoff_by_exceed <- peak_exceed %>%
-#   group_by(site) %>%
-#   slice_max(order_by = peak_exceed, n = 1, with_ties = FALSE) %>%
-#   ungroup()
-# 
-# largest_runoff_by_exceed
-```
-
-#### B. Biggest peak flow
 
 ```{r, warning=F, echo=FALSE, include=T}
 largest_runoff_by_peakQ <- event_summary %>%
@@ -495,7 +471,20 @@ largest_runoff_by_peakQ <- event_summary %>%
 largest_runoff_by_peakQ
 ```
 
+### Find the date of the highest flow at each site ?
 
+```{r, warning=F, echo=FALSE, include=T}
+
+sum_peakQ <- df_plot %>%
+  filter(date <as.Date("2025-12-11")) %>%
+  group_by(site) %>%
+  slice_max(order_by = flow_filled, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(site, date, flow_filled)
+
+sum_peakQ
+
+```
 
 ### ============================================================================
 
@@ -504,8 +493,6 @@ largest_runoff_by_peakQ
 ### ============================================================================
 
 ## 2. Basin water quality differences 
-
-
 
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
 # Read in TSS data
@@ -537,8 +524,6 @@ merged_df <- test_dat %>%
 
 ```
 
-
-
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
 
 test_dat
@@ -561,7 +546,6 @@ df_WQ_plot <- merged_df %>%
   ) 
 
 ```
-
 
 ```{r}
 
@@ -684,7 +668,7 @@ wq_boxplot <- function(data, y, y_lab,
       alpha = 0.95,
       position = dodge
     ) +
-     labs(y = y_lab, x = "Burn %", fill= "Reach") +
+     labs(y = y_lab, x = "Area burned (%)", fill= "Reach") +
     theme_minimal()
   
   if (!is.null(site_colors)) p <- p + scale_fill_manual(values = site_colors,
@@ -716,7 +700,6 @@ TDN_plot <- wq_boxplot(df_WQ_plot, TDN_QC, expression(TDN~(mg~L^-1)), hline = 0.
 
 PO4_plot <- wq_boxplot(df_WQ_plot, PO4.P_QC, expression(PO[4]~(mg~L^-1)), hline = 0.01, site_colors = site_colors)
 
-
 TSS_plot <- wq_boxplot(df_WQ_plot, TSS, expression(TSS~(mg~L^-1)), site_colors = site_colors)
 
 ```
@@ -745,7 +728,7 @@ Pb_plot  <- wq_boxplot(df_WQ_plot, Pb_QC, expression(Pb~(mu*g~L^-1)),  hline = 0
 
 Sr_plot  <- wq_boxplot(df_WQ_plot, Sr_QC, expression(Sr~(mu*g~L^-1)),  hline = 0.1,  site_colors = site_colors)
 
-B_QC_plot  <- wq_boxplot(df_WQ_plot, B_QC, expression(B~(mu*g~L^-1)),  hline = 1,  site_colors = site_colors)
+Zn_plot  <- wq_boxplot(df_WQ_plot, Zn_QC, expression(Zn~(mu*g~L^-1)),  hline = 0.1,  site_colors = site_colors)
 
 SrB_QC_plot  <- wq_boxplot(df_WQ_plot, Sr_B_QC, expression(Sr:B~(mu*g~L^-1)),  hline = 1,  site_colors = site_colors)
 
@@ -767,7 +750,7 @@ legend <- get_legend(
 plots <- lapply(
   list(
     TSS_plot, DOC_plot, TDN_plot, PO4_plot,
-    Al_plot, As_plot, Ba_plot, Ca_plot,
+    Al_plot, Ba_plot, Ca_plot,
     Fe_plot, Mn_plot, Sr_plot
   ),
   function(p) p + theme(legend.position = "none")
@@ -781,9 +764,9 @@ legend_plot <- as_ggplot(legend)
 
 DMC_grid_bp <- ggarrange(
   plotlist = c(plots, list(legend_plot)),
-  ncol = 4,
-  nrow = 3,
-    labels = LETTERS[1:11],   # A–K
+  ncol = 3,
+  nrow = 4,
+    labels = LETTERS[1:10],   # A–K
   label.x = 0.08,           # left
   label.y = 0.98,           # top
   hjust = 0,
@@ -798,12 +781,9 @@ DMC_grid_bp
 ```
 
 ```{r, echo=FALSE, include =F}
-# ggsave(plot = DMC_grid_nuts, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/Nuts_concentrations_boxplot_grid_plot.png",sep=""),width=8,height=7,dpi=300)
+# ggsave(plot = DMC_grid_bp, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/Nuts_concentrations_boxplot_grid_plot.png",sep=""),width=6,height=9,dpi=300)
 
 ```
-
-
-
 
 ### ============================================================================
 
@@ -870,9 +850,9 @@ label_site <- function(site){
 ### Flow + storm flags (unchanged logic, but isolated)
 
 ```{r, warning=F, echo=T, include=T}
-prep_flow <- function(new_df_hydro, flow_start = as.Date("2024-10-01")) {
+prep_flow <- function(new_df_hydro, flow_start = as.Date("2024-10-15"), flow_end = as.Date("2025-12-11")) {
   new_df_hydro %>%
-    filter(date >= flow_start) %>%
+    filter(date >= flow_start & date <= flow_end) %>%
     mutate(sec_per_day = 86400) %>%
     arrange(site, date) %>%
     group_by(site) %>%
@@ -883,23 +863,6 @@ prep_flow <- function(new_df_hydro, flow_start = as.Date("2024-10-01")) {
     ) %>%
     ungroup()
 }
-
-#### YOU ARE HERE 
-
-# 
-# prep_storm_flags <- function(event_summary,test_keys) {
-#   event_summary %>%
-#     dplyr::select(site, event_id_lf, event_start_date, event_end_date, duration_days) %>%
-#     dplyr::filter(!is.na(event_start_date), !is.na(event_end_date)) %>%
-#     dplyr::arrange(site, event_start_date) %>%
-#     dplyr::distinct(site, event_id_lf, event_start_date, event_end_date, .keep_all = TRUE)
-# 
-#   test_keys %>%
-#     dplyr::select(site, date) %>%
-#     inner_join(prep_storm_flags, by = c("site", "date")) %>%
-#     transmute(site, date, storm = "storm") %>%
-#     distinct()
-# }
 
 prep_storm_flags <- function(event_summary, test_keys) {
 
@@ -918,7 +881,6 @@ prep_storm_flags <- function(event_summary, test_keys) {
     dplyr::transmute(site, date, storm = "storm") %>%
     dplyr::distinct()
 }
-
 
 ```
 
@@ -952,7 +914,6 @@ prep_chem_loads_long <- function(test_dat, flow_df, storm_df, analytes_tbl,
 }
 
 ```
-
 
 ### Fxn to fit DMC models for any analyte 
 
@@ -1021,48 +982,18 @@ site_strip_labs <- c(
   F_winters_usgs = "Winters USGS"
 )
 
-
-plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load", 
-                     flow_label ="flow lab",
-                     color_var = "tsf") {
-
-  df_norm <- df_norm %>% dplyr::ungroup()
-  models_tbl <- models_tbl %>%
-    dplyr::ungroup() %>%
-    dplyr::mutate(slope_label = paste0("slope = ", round(slope, 2)))
-
-  ggplot(df_norm, aes(Q_c_norm, load_c_norm)) +
-    geom_abline(data = models_tbl, aes(slope = slope, intercept = 0),
-                linewidth = 0.5, alpha = 0.8) +
-    geom_path(alpha = 0.5, linewidth = 1) +
-    geom_point(aes(color = .data[[color_var]]), size = 2.5, alpha = 0.9) +
-    geom_point(
-      data = df_norm %>% filter(storm == "storm"),
-      shape = 21, fill = NA, color = "black", stroke = 1.5, size = 3
-    ) +
-    geom_text(
-      data = models_tbl,
-      aes(x = 0.55, y = 0.85, label = slope_label),
-      hjust = 1.05, vjust = -0.5,
-      size = 4,
-      inherit.aes = FALSE
-    ) +
-    scale_color_viridis_c(option = "plasma", direction = -1) +
-    facet_wrap(~ site_OL, nrow = 1,
-               labeller = labeller(site_OL = as_labeller(site_strip_labs))) +
-    coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
-    labs(x = flow_label, y = value_label) +
-    theme_minimal() +
-    theme(legend.position = "bottom",
-          panel.grid.minor = element_blank())
-}
 # 
 # plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load", 
 #                      flow_label ="flow lab",
 #                      color_var = "tsf") {
 # 
+#   df_norm <- df_norm %>% dplyr::ungroup()
+#   models_tbl <- models_tbl %>%
+#     dplyr::ungroup() %>%
+#     dplyr::mutate(slope_label = paste0("β = ", round(slope, 2)))
+# 
 #   ggplot(df_norm, aes(Q_c_norm, load_c_norm)) +
-#         geom_abline(data = models_tbl, aes(slope = slope, intercept = 0),
+#     geom_abline(data = models_tbl, aes(slope = slope, intercept = 0),
 #                 linewidth = 0.5, alpha = 0.8) +
 #     geom_path(alpha = 0.5, linewidth = 1) +
 #     geom_point(aes(color = .data[[color_var]]), size = 2.5, alpha = 0.9) +
@@ -1070,25 +1001,74 @@ plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load",
 #       data = df_norm %>% filter(storm == "storm"),
 #       shape = 21, fill = NA, color = "black", stroke = 1.5, size = 3
 #     ) +
-#     # ## try to add in DMC slopes
-#     #   geom_text(
-#     #   data = models_tbl,
-#     #   aes(x = 1, y = 0, label = slope_label),
-#     #   hjust = 1.05, vjust = -0.5,
-#     #   size = 4,
-#     #   inherit.aes = FALSE
-#     # ) +
-#     # 
-#     scale_color_viridis_c(option = "plasma", direction = -1) +
+#     geom_text(
+#       data = models_tbl,
+#       aes(x = 0.45, y = 0.85, label = slope_label),
+#       hjust = 1.05, vjust = -0.5,
+#       size = 4,
+#       inherit.aes = FALSE
+#     ) +
+#     scale_color_viridis_c(option = "plasma", direction = -1, name= "Days since fire") +
 #     facet_wrap(~ site_OL, nrow = 1,
-#                    labeller = labeller(site_OL = as_labeller(site_strip_labs))) +
+#                labeller = labeller(site_OL = as_labeller(site_strip_labs))) +
 #     coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
 #     labs(x = flow_label, y = value_label) +
-#         theme_minimal() +
-# 
-#     theme(legend.position = "bottom", panel.grid.minor = element_blank())
+#     theme_minimal() +
+#     theme(legend.position = "bottom",
+#           panel.grid.minor = element_blank())
 # }
 
+
+plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load", 
+                     flow_label = "flow lab",
+                     color_var = "tsf") {
+
+  df_norm <- df_norm %>% dplyr::ungroup()
+
+  models_tbl <- models_tbl %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(slope_label = paste0("β = ", round(slope, 2)))
+
+  ggplot(df_norm, aes(Q_c_norm, load_c_norm)) +
+    geom_abline(
+      data = models_tbl,
+      aes(slope = slope, intercept = 0),
+      linewidth = 0.5, alpha = 0.8
+    ) +
+    geom_path(alpha = 0.5, linewidth = 1, color = "grey50") +
+    geom_point(aes(color = .data[[color_var]]), size = 2.5, alpha = 0.9) +
+    geom_point(
+      data = df_norm %>% filter(storm == "storm"),
+      shape = 21, fill = NA, color = "black", stroke = 1.3, size = 3
+    ) +
+    geom_text(
+      data = models_tbl,
+      aes(x = 0.45, y = 0.85, label = slope_label),
+      hjust = 1.05, vjust = -0.5,
+      size = 4,
+      inherit.aes = FALSE
+    ) +
+    scale_color_viridis_c(
+      option = "plasma",
+      direction = -1,
+      name = "Days since fire"
+    ) +
+    facet_wrap(
+      ~ site_OL, nrow = 1,
+      labeller = labeller(site_OL = as_labeller(site_strip_labs))
+    ) +
+    coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+    labs(x = flow_label, y = value_label) +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      panel.grid.minor = element_blank(),
+      strip.background = element_blank(),
+      strip.text = element_text(size = 10),
+      panel.spacing = unit(1, "lines"),
+      plot.margin = margin(2, 5.5, 2, 5.5)
+    )
+}
 
 ```
 
@@ -1262,7 +1242,7 @@ plot_cumul_resid <- function(resid_df,
 ```{r, warning=F, echo=T, include=T}
 
 # 1) Prep once
-davis_flow <- prep_flow(new_df_hydro, flow_start = as.Date("2024-09-30"))
+davis_flow <- prep_flow(new_df_hydro, flow_start = as.Date("2024-10-15"), flow_end = as.Date("2025-12-11"))
 storm <- prep_storm_flags(event_summary, test_keys)
 
 # optional: flow summary
@@ -1292,8 +1272,8 @@ dmc_long <- dmc_long %>%
 library(dplyr)
 
 yield_m3 <- davis_flow %>%
-  filter(date >= as.Date("2024-10-01"),
-         date <= as.Date("2025-09-30")) %>%
+  filter(date >= as.Date("2024-10-15"),
+         date <= as.Date("2025-12-12")) %>%
   group_by(site) %>%
   summarise(
     total_liters = sum(Q_daily_liters, na.rm = TRUE),
@@ -1310,7 +1290,6 @@ yield_m3
 
 ```
 
-
 ## TSS
 
 ```{r, warning=F, echo=T, include=T}
@@ -1325,20 +1304,13 @@ inference_TSS
 
 ```{r,  fig.width=9, fig.height=3, out.width="90%", include=F}
 # 
-# DMC_TSS_plot <- plot_dmc(davis_TSS, models_TSS, 
-#                          flow_label = NULL,
-#                          inference_TSS,
-#                          value_label = expression(Norm.~TSS~(mg~L^-1)))
-# DMC_TSS_plot
-
-
 inference_TSS <- infer_slopes_vs1(models_TSS)
 
 DMC_TSS_plot <- plot_dmc(
   df_norm    = davis_TSS,
   models_tbl = inference_TSS,
   flow_label = NULL,
-  value_label = expression(Norm.~TSS~(mg~L^-1))
+  value_label = "Norm. TSS", #expression(Norm.~TSS~(mg~L^-1))
 )
 
 DMC_TSS_plot
@@ -1383,7 +1355,8 @@ inference_DOC <- infer_slopes_vs1(models_DOC)
 DMC_DOC_plot <- plot_dmc(davis_DOC, 
                          flow_label = NULL,
                          models_tbl = inference_DOC,
-                         value_label = expression(Norm.~DOC~(mg~L^-1)))
+                         value_label = "Norm. DOC", #expression(Norm.~DOC~(mg~L^-1))
+                         )
 DMC_DOC_plot
 ```
 
@@ -1423,7 +1396,8 @@ inference_TDN
 
 DMC_TDN_plot <- plot_dmc(davis_TDN, models_TDN, 
                          flow_label = NULL,
-                         value_label = expression(Norm.~TDN~(mg~L^-1)))
+                         value_label = "Norm. TDN", #expression(Norm.~TDN~(mg~L^-1))
+                         )
 DMC_TDN_plot
 ```
 
@@ -1461,7 +1435,8 @@ inference_PO4
 
 DMC_PO4_plot <- plot_dmc(davis_PO4, models_PO4,
                          flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
-                         value_label = expression(Norm.~PO[4]~(mg~L^-1)))
+                         value_label = expression(Norm.~PO[4])#~(mg~L^-1))
+                         )
 DMC_PO4_plot
 ```
 
@@ -1502,7 +1477,8 @@ inference_Al
 
 DMC_Al_plot <- plot_dmc(davis_Al, models_Al,
                         flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
-                       value_label = expression(Norm.~Al~(mg~L^-1)))
+                       value_label = "Norm. Al", #expression(Norm.~Al~(mg~L^-1))
+                       )
 DMC_Al_plot
 ```
 
@@ -1541,7 +1517,8 @@ inference_As
 
 DMC_As_plot <- plot_dmc(davis_As, models_As, 
                         flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
-                       value_label = expression(Norm.~As~(mg~L^-1)))
+                       value_label = "Norm. As", #expression(Norm.~As~(mg~L^-1))
+                       )
 DMC_As_plot
 ```
 
@@ -1579,7 +1556,8 @@ inference_B
 
 DMC_B_plot <- plot_dmc(davis_B, models_B,
                        flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
-                       value_label = expression(Norm.~B~(mg~L^-1)))
+                       value_label = "Norm. B", #expression(Norm.~B~(mg~L^-1))
+                       )
 DMC_B_plot
 ```
 
@@ -1616,7 +1594,8 @@ inference_Ba
 
 DMC_Ba_plot <- plot_dmc(davis_Ba, models_Ba, 
                         flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
-                       value_label = expression(Norm.~Ba~(mg~L^-1)))
+                       value_label = "Norm. Ba", #expression(Norm.~Ba~(mg~L^-1))
+                       )
          
 DMC_Ba_plot
 ```
@@ -1655,7 +1634,8 @@ inference_Ca
 
 DMC_Ca_plot <- plot_dmc(davis_Ca, models_Ca,
                         flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
-                       value_label = expression(Norm.~Ca~(mg~L^-1)))
+                       value_label = "Norm. Ca", #expression(Norm.~Ca~(mg~L^-1))
+                       )
 DMC_Ca_plot
 ```
 
@@ -1731,7 +1711,8 @@ inference_Fe
 ```{r,  fig.width=9, fig.height=5, out.width="90%", include =F}
 DMC_Fe_plot <- plot_dmc(davis_Fe, models_Fe,
                         flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
-                       value_label = expression(Norm.~Fe~(mg~L^-1)))
+                       value_label = "Norm. Fe", #expression(Norm.~Fe~(mg~L^-1))
+                       )
 DMC_Fe_plot
 ```
 
@@ -1769,7 +1750,8 @@ inference_Mn
 
 DMC_Mn_plot <- plot_dmc(davis_Mn, models_Mn, 
                         flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
-                       value_label = expression(Norm.~Mn~(mg~L^-1)))
+                       value_label = "Norm. Mn", #expression(Norm.~Mn~(mg~L^-1))
+                       )
 DMC_Mn_plot
 ```
 
@@ -1846,7 +1828,8 @@ inference_Sr
 
 DMC_Sr_plot <- plot_dmc(davis_Sr, models_Sr, 
                         flow_label = NULL, #expression(Normalized~cumulative~water~yield~(m^3~day^-1)),
-                       value_label = expression(Norm.~Sr~(mg~L^-1)))
+                       value_label = "Norm. Sr", #expression(Norm.~Sr~(mg~L^-1))
+                       )
 DMC_Sr_plot
 ```
 
@@ -1932,24 +1915,148 @@ DMCres_Zn_plot
 ```
 
 
+
+####
+
+2026-03-25
+draft of rotated flow histogram 
+
+### 
+
+```{r,  fig.width=15, fig.height=4, out.width="99%", echo=F}
+# 
+
+site_strip_labs_v2 <- c(
+  ophir        = "Ophir",
+  browns_sub   = "Browns sub.",
+  browns       = "Browns",
+  winters_up   = "Winters up.",
+  winters_usgs = "Winters USGS"
+)
+
+new_df_hydro <- new_df_hydro %>%
+  mutate(
+    tsf = as.integer(difftime(date, ref_date, units = "days")),
+    site = factor(site, levels = site_order))
+# 
+# flow_density_plt <- ggplot(
+#   new_df_hydro %>% 
+#     dplyr::filter(date > as.Date("2024-10-14") & date < as.Date("2025-12-12")) %>%
+#     dplyr::arrange(site, tsf),
+#   aes(x = tsf, y = flow_filled)
+# ) +
+#   geom_segment(
+#     aes(xend = tsf, y = 0, yend = flow_filled, color = tsf),
+#     linewidth = 1.2,
+#     alpha = 0.9
+#   ) +
+#   geom_line(
+#     aes(color = tsf),
+#     linewidth = 0.7
+#   ) +
+#   facet_wrap(~site, nrow = 1, scales = "free_y", 
+#                            labeller = labeller(site = as_labeller(site_strip_labs_v2))) +
+#   scale_color_viridis_c(
+#     option = "plasma",
+#     direction = -1,
+#     name = "Days since fire"
+#   ) +
+#   labs(x= "Days since fire", y = expression(flow~(m^3~s^-1))) +
+#   theme_cowplot() +
+#   theme(
+#     legend.position = "bottom",
+#     strip.background = element_blank(),
+#     strip.text = element_text(size = 10)
+#   )
+# 
+# flow_density_plt
+
+
+flow_density_plt <- ggplot(
+  new_df_hydro %>% 
+    dplyr::filter(date > as.Date("2024-10-14") & date < as.Date("2025-12-12")) %>%
+    dplyr::arrange(site, tsf),
+  aes(x = tsf, y = flow_filled)
+) +
+  geom_segment(
+    aes(xend = tsf, y = 0, yend = flow_filled, color = tsf),
+    linewidth = 1.1,
+    alpha = 0.9
+  ) +
+  geom_line(
+    aes(color = tsf),
+    linewidth = 0.7,
+    alpha = 0.9
+  ) +
+  facet_wrap(
+    ~site, nrow = 1, scales = "free_y",
+    labeller = labeller(site = as_labeller(site_strip_labs_v2))
+  ) +
+  scale_color_viridis_c(
+    option = "plasma",
+    direction = -1,
+    name = "Days since fire"
+  ) +
+  labs(
+    x = NULL,   # remove if this is not the bottom row
+    y = expression(Flow~(m^3~s^-1))
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    strip.background = element_blank(),
+    strip.text = element_text(size = 10),
+    panel.spacing = unit(1, "lines"),
+    plot.margin = margin(5.5, 5.5, 2, 5.5),
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(size = 9),
+    axis.text.y = element_text(size = 9),
+    axis.title.y = element_text(size = 11)
+  )
+
+flow_density_plt <- flow_density_plt +
+  theme(
+    plot.margin = margin(0, 10.5, 0, 10.5),
+    panel.spacing = unit(0.9, "lines"),
+    axis.title.y = element_text(size = 11, angle = 90, vjust = 0.5),
+    legend.position = "bottom",
+    axis.title.x = element_blank()
+  )
+
+# ggsave(plot = flow_density_plt, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_flow_plot.png",sep=""),width=11,height=2, dpi=300)
+
+
+```
+
+
+
+
 ####
 
 ```{r,  fig.width=10, fig.height=11, out.width="85%", echo=F}
 
-DMC_grid_nuts <- ggarrange( 
+DMC_grid_nuts <- ggarrange(
+ # flow_density_plt,
   DMC_TSS_plot,
   DMC_DOC_plot,
   DMC_TDN_plot,
   DMC_PO4_plot,
-  common.legend = T,
-  labels = c("a", "b", "c", "d"),
-  label.x = 0.1,  
+  common.legend = TRUE,
+    legend = "bottom",
+  labels = c("b", "c", "d", "e"),
+  label.x = 0.1,
   label.y = 0.98,
-  ncol=1,
-  nrow=4)
+  ncol = 1,
+  nrow = 4
+ # heights = c(0.6, 1, 1, 1, 1)
+  )
 
 DMC_grid_nuts
+
 ```
+
+
 
 ```{r, echo=FALSE, include =F}
 
@@ -1959,55 +2066,12 @@ DMC_grid_nuts
 
 #### 
 
-```{r,  fig.width=8, fig.height=6, out.width="85%", echo=FALSE}
-DMC_res_grid_nuts <- ggarrange( 
-  DMCres_TSS_plot,
-  DMCres_DOC_plot,
-  DMCres_TDN_plot,
-  DMCres_PO4_plot,
-  common.legend = T,
-  ncol=1,
-  nrow=4)
-
-DMC_res_grid_nuts
-```
-
-```{r, echo=FALSE, include =F}
-
-# ggsave(plot = DMC_res_grid_nuts, filename = paste("./Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_res_nuts_grid_plot.png",sep=""),width=6,height=8,dpi=300)
-
-```
-
-
-#### 
-
 ```{r,  fig.width=12, fig.height=15, out.width="95%", echo=FALSE}
-
-DMC_grid_metals_SI <- 
-  ggarrange( 
-  DMC_Al_plot,
-  DMC_As_plot,
-  #DMC_B_plot,
-  DMC_Ba_plot,
-  DMC_Ca_plot,
-  #DMC_Cr_plot, 
-  DMC_Fe_plot,
-  DMC_Mn_plot,
-  #DMC_Pb_plot,
-  DMC_Sr_plot,
-  #DMC_Zn_plot,
-  common.legend = T,
-  ncol=1,
-  nrow=7)
-
-# DMC_grid_metals_SI
-
-
 
 DMC_grid_metals <- 
   ggarrange( 
   DMC_Al_plot,
-  DMC_As_plot,
+  #DMC_As_plot,
   #DMC_B_plot,
   DMC_Ba_plot,
   #DMC_Ca_plot,
@@ -2015,10 +2079,11 @@ DMC_grid_metals <-
   DMC_Fe_plot,
   DMC_Mn_plot,
   #DMC_Pb_plot,
-  #DMC_Sr_plot,
+  DMC_Sr_plot,
   #DMC_Zn_plot,
   common.legend = T,
-  labels = c("a", "b", "c", "d", "e"),
+      legend = "bottom",
+  labels = c("b", "c", "d", "e", "f"),
   label.x = 0.07,  
   label.y = 0.95,
   ncol=1,
@@ -2040,49 +2105,6 @@ DMC_grid_metals
 ```
 
 
-#### 
-
-```{r,  fig.width=7, fig.height=16, out.width="85%", echo=FALSE}
-
-DMCres_grid_metals <- 
-  ggarrange( 
-  #DMC_Al_plot,
-  DMCres_As_plot,
-  DMBes_B_plot,
-  DMCres_Ba_plot,
-  DMCres_Ca_plot,
-  DMCres_Cr_plot, 
-  #DMCres_Fe_plot,
-  #DMCres_Mn_plot,
-  DMCres_Pb_plot,
-  DMSres_Sr_plot,
-  DMCres_Zn_plot,
-  common.legend = T,
-  ncol=1,
-  nrow=8)
-
-DMCres_grid_metals
-```
-
-
-```{r, echo=FALSE, include =F}
-# ggsave(plot = DMCres_grid_metals, filename = paste("./Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_res_metals_grid_plot_SI.png",sep=""),width=6,height=20,dpi=300)
-
-```
-
-```{r, echo=FALSE, include =F}
-## note for final .md render on git
-# output:
-#   github_document:
-#     toc: true
-#     toc_depth: 3
-#     html_preview: false
-# always_allow_html: true
-# editor_options: 
-#   markdown: 
-#     wrap: 72
-
-```
 
 
 End of script. 

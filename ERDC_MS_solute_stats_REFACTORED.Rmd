@@ -1669,6 +1669,7 @@ print(loo_Ba)
 
 # Bayesian R²
 r2_Ba <- bayes_R2(Ba_m_logn)
+r2_Ba
 #kable(r2_Ba, caption = "Bayesian R² for Ba Model", digits = 3)
 ```
 

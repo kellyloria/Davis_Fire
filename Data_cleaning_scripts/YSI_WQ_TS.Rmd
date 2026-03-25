@@ -87,7 +87,7 @@ water_year <- function(data) {
 
 
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
-# Chem data
+# 
 davis_data <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/YSI_KOR_dat_20251210_processed.csv") %>% 
   mutate(datetime = round_date(as.POSIXct(datetime, format="%Y-%m-%d %H:%M:%S"), unit="5 minutes"),
          date = as.Date(datetime)) %>%
@@ -260,6 +260,101 @@ p1
 
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
 # write.csv(davis_dat_day, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ysi_WQ_QAQC_daily.csv")
+
+```
+
+
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+# 
+davis_data_01 <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/YSI_KOR_dat_20260224_processed.csv") %>% 
+  mutate(datetime = round_date(as.POSIXct(datetime, format="%Y-%m-%d %H:%M:%S"), unit="5 minutes"),
+         date = as.Date(datetime)) %>%
+  filter(datetime > as.POSIXct("2025-12-20 11:00:00") ) %>%
+    mutate(site_lab = case_when(
+    stream == "davis" ~ "davis", 
+    stream ==  "ophir creek" ~ "ophir",
+    stream ==  "winters creek" ~ "winters_usgs",
+    stream == "wc usgs gage" ~ "winters_usgs",
+    stream ==  "winters up" ~ "winters_up",
+    stream == "browns creek" ~ "browns", 
+    stream == "browns creek sub" ~ "browns_sub")) 
+
+names(davis_data_01)
+str(davis_data_01)
+```
+
+### Check long:
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=8, fig.height=3}
+
+p1 <- davis_data_01 %>%
+  ggplot(aes(x = stream,
+             y = long.)) +
+  geom_point(
+    alpha = 0.8, size = 2, 
+    aes(color = site_lab),
+    position = position_jitter(width = 0.1),  
+    shape = 19) +
+  scale_fill_manual(values = site_lab_colors) +
+  scale_color_manual(values = site_lab_colors) +
+  theme_minimal()
+
+p1
+
+```
+
+
+
+### Check lat:
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=8, fig.height=3}
+
+p1 <- davis_data_01 %>%
+  ggplot(aes(x = site_lab,
+             y = lat.)) +
+  geom_point(
+    alpha = 0.8, size = 2, 
+    aes(color = site_lab),
+    position = position_jitter(width = 0.1),  
+    shape = 19) +
+  scale_fill_manual(values = site_lab_colors) +
+  scale_color_manual(values = site_lab_colors) +
+  theme_minimal()
+
+p1
+
+```
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+
+
+davis_dat_day1 <- davis_data_01 %>%
+  select(-site_lab) %>%
+  rename(site_lab = stream) %>%
+  group_by(site_lab, date) %>%
+  summarise(
+    across(3:22,
+           list(mean = ~mean(.x, na.rm = TRUE),
+                sd   = ~sd(.x, na.rm = TRUE)),
+           .names = "{.col}_{.fn}")
+  ) %>%
+  ungroup()
+
+
+davis_dat_day1 <- davis_dat_day1[, intersect(names(davis_dat_day), names(davis_dat_day1))]
+
+davis_dat_day1 <- davis_dat_day1 %>%
+  select(any_of(names(davis_dat_day)))
+
+```
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+davis_dat_day_all <- rbind(davis_dat_day, davis_dat_day1)
+
+# write.csv(davis_dat_day_all, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ysi_WQ_QAQC_daily1.csv")
 
 ```
 

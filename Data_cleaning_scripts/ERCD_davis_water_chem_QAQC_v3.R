@@ -1,6 +1,6 @@
 ## 2025-12-02 water chemistry QA'QC
 
-# DATE of last clean : 2025-12-23
+# DATE of last clean : 2025-03-10
 
 # I.  First cleaning pipe: 
 #     - Line up with USGS gage 
@@ -30,7 +30,7 @@ library(data.table)
 
 
 # Chem data
-davis_data <- read_excel("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/davis_data_water_chem.xlsx") 
+davis_data <- read_excel("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/davis_data_water_chem_2603.xlsx") 
 #View(davis_data)
 str(davis_data)
 
@@ -255,7 +255,7 @@ davis_df <- davis_df2%>%
 
 ## Step 3: ##
 ### use YSI data to fill in missing GPS
-ysi_dat <- read_csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ysi_WQ_QAQC_daily.csv")
+ysi_dat <- read_csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ysi_WQ_QAQC_daily1.csv")
 
 ysi_dat <- ysi_dat %>%
    dplyr::select(site_lab, date, ends_with("_mean")) %>%
@@ -921,7 +921,7 @@ flow_data <- flow_m_dat%>%
   left_join(flow_data_OP, by=c("datetime"))
 
 
-#### !!!!!
+#### 
 
 
 library(mgcv)
@@ -1183,4 +1183,4 @@ merged_df1 <- merged_dff %>%
 # write.csv(merged_df, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_only_chem_dat_processed.csv", row.names = FALSE)
 
 
-# write.csv(merged_df1, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_only_chem_dat_CQ.csv", row.names = FALSE)
+# write.csv(merged_df1, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_only_chem_dat_CQ1.csv", row.names = FALSE)

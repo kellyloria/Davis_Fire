@@ -88,7 +88,7 @@ water_year <- function(data) {
 
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
 # Chem data
-davis_data <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/Davis_Rock_Scrape_Biomass.csv") %>% mutate(date = as.Date(date, format = c("%m/%d/%Y"))) %>%
+davis_data <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/Davis_Rock_Scrape_Biomass1.csv") %>% mutate(date = as.Date(date, format = c("%m/%d/%Y"))) %>%
     mutate(site_lab = case_when(
     Site== "Davis" ~ "davis", 
     Site == "Ophir " ~ "ophir",
