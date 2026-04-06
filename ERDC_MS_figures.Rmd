@@ -124,11 +124,11 @@ test_dat <- test_dat%>%
 
 ```
 
-### =======================================================
+
 
 ## I. Characterize hydroclimate conditions
 
-### =======================================================
+
 
  - How do sampling events reflect baseflow or runoff?
  
@@ -509,11 +509,11 @@ lowflow_transition
 
 ```
 
-### =======================================================
+
 
 ## II.  Differences in solute concentrations 
 
-### =======================================================
+
 
 ### Catchment water quality differences 
 
@@ -806,11 +806,11 @@ DMC_grid_bp
 
 ```
 
-### =======================================================
+
 
 ## III. Double mass curves: Calculate interval-based loads
 
-### =======================================================
+
 
 #### For each chemistry sample, calculate:
 
@@ -1918,11 +1918,11 @@ DMCres_Zn_plot
 
 
 
-### =======================================================
+
 
 ## IV. Visualize DMC
 
-### =======================================================
+
 
 ### Rotated flow time series
 

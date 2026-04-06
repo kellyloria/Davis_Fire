@@ -3,10 +3,8 @@ ERDC Davis Fire MS L-Q analysis
 Kelly Loria
 2026-04-06
 
-- [=======================================================](#section)
 - [I. Characterize hydroclimate
   conditions](#i-characterize-hydroclimate-conditions)
-  - [=======================================================](#section-1)
   - [Create variable that corresponds with PPT flow
     increase](#create-variable-that-corresponds-with-ppt-flow-increase)
 - [*Figure 2:*](#figure-2)
@@ -16,17 +14,13 @@ Kelly Loria
   - [Find the date of the highest flow at each site
     ?](#find-the-date-of-the-highest-flow-at-each-site-)
   - [baseflow transition?](#baseflow-transition)
-  - [=======================================================](#section-2)
 - [II. Differences in solute
   concentrations](#ii-differences-in-solute-concentrations)
-  - [=======================================================](#section-3)
   - [Catchment water quality
     differences](#catchment-water-quality-differences)
 - [*Figure 3:*](#figure-3)
-  - [=======================================================](#section-4)
 - [III. Double mass curves: Calculate interval-based
   loads](#iii-double-mass-curves-calculate-interval-based-loads)
-  - [=======================================================](#section-5)
   - [One-time setup: parameter tables +
     helpers](#one-time-setup-parameter-tables--helpers)
   - [Flow + storm flags](#flow--storm-flags)
@@ -60,9 +54,7 @@ Kelly Loria
   - [Sr dynamics](#sr-dynamics)
   - [B dynamics](#b-dynamics-1)
   - [Zn dynamics](#zn-dynamics)
-  - [=======================================================](#section-6)
 - [IV. Visualize DMC](#iv-visualize-dmc)
-  - [=======================================================](#section-7)
   - [Rotated flow time series](#rotated-flow-time-series)
 - [*Figure 4:*](#figure-4)
 - [*Figure 5:*](#figure-5)
@@ -73,11 +65,7 @@ code.r{font-size: 8px;}
 pre {font-size: 10px}
 </style>
 
-### =======================================================
-
 ## I. Characterize hydroclimate conditions
-
-### =======================================================
 
 - How do sampling events reflect baseflow or runoff?
 
@@ -224,11 +212,7 @@ df21 <- df2 %>%
     ## 4 winters_up        2025 2025-06-02   153 0.0145  -0.00409
     ## 5 winters_usgs      2025 2025-06-02   153 0.00835 -0.00255
 
-### =======================================================
-
 ## II. Differences in solute concentrations
-
-### =======================================================
 
 ### Catchment water quality differences
 
@@ -380,11 +364,7 @@ wq_boxplot <- function(data, y, y_lab,
 
 <img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-18-1.png" width="85%" />
 
-### =======================================================
-
 ## III. Double mass curves: Calculate interval-based loads
-
-### =======================================================
 
 #### For each chemistry sample, calculate:
 
@@ -1455,11 +1435,7 @@ bp_Zn
     ## 5 F_winters_usgs <tibble>      0.419 2025-03-12        0.358    1.45       1.09 
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
-### =======================================================
-
 ## IV. Visualize DMC
-
-### =======================================================
 
 ### Rotated flow time series
 
