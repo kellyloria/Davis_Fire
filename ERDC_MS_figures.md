@@ -3,10 +3,10 @@ ERDC Davis Fire MS L-Q analysis
 Kelly Loria
 2026-04-06
 
-- [============================================================================](#section)
+- [=======================================================](#section)
 - [I. Characterize hydroclimate
   condtions](#i-characterize-hydroclimate-condtions)
-  - [============================================================================](#section-1)
+  - [=======================================================](#section-1)
   - [Create variable that corresponds with PPT flow
     increase](#create-variable-that-corresponds-with-ppt-flow-increase)
 - [Figure 2:](#figure-2)
@@ -16,17 +16,17 @@ Kelly Loria
   - [Find the date of the highest flow at each site
     ?](#find-the-date-of-the-highest-flow-at-each-site-)
   - [baseflow transition?](#baseflow-transition)
-  - [============================================================================](#section-2)
+  - [=======================================================](#section-2)
 - [II. MS basin differences in solute
   concetrations](#ii-ms-basin-differences-in-solute-concetrations)
-  - [============================================================================](#section-3)
+  - [=======================================================](#section-3)
 - [2. Basin water quality
   differences](#2-basin-water-quality-differences)
 - [Figure 3:](#figure-3)
-  - [============================================================================](#section-4)
+  - [=======================================================](#section-4)
 - [III. Double mass curves: Calculate interval-based
   loads](#iii-double-mass-curves-calculate-interval-based-loads)
-  - [============================================================================](#section-5)
+  - [=======================================================](#section-5)
   - [=========](#section-6)
   - [=========](#section-7)
   - [Flow + storm flags (unchanged logic, but
@@ -69,11 +69,11 @@ code.r{font-size: 8px;}
 pre {font-size: 10px}
 </style>
 
-### ============================================================================
+### =======================================================
 
 ## I. Characterize hydroclimate condtions
 
-### ============================================================================
+### =======================================================
 
 - How do sampling events reflect baseflow or runoff?
 
@@ -111,17 +111,6 @@ new_df_hydro <- new_df_hydro %>%
   mutate(
     flow_filled = (flow)) %>%
   ungroup()
-
-# 
-# filled_counts <- new_df_hydro %>%
-#   mutate(filled = is.na(flow) & !is.na(flow_filled)) %>%
-#   group_by(site) %>%
-#   summarise(
-#     n_filled = sum(filled),
-#     .groups = "drop"
-#   )
-# 
-# filled_counts
 ```
 
 ``` r
@@ -230,11 +219,11 @@ df21 <- df2 %>%
     ## 4 winters_up        2025 2025-06-02   153 0.0145  -0.00409
     ## 5 winters_usgs      2025 2025-06-02   153 0.00835 -0.00255
 
-### ============================================================================
+### =======================================================
 
 ## II. MS basin differences in solute concetrations
 
-### ============================================================================
+### =======================================================
 
 ## 2. Basin water quality differences
 
@@ -386,21 +375,43 @@ wq_boxplot <- function(data, y, y_lab,
 
 <img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-18-1.png" width="85%" />
 
-### ============================================================================
+### =======================================================
 
 ## III. Double mass curves: Calculate interval-based loads
 
-### ============================================================================
+### =======================================================
 
 #### For each chemistry sample, calculate:
 
 ##### 1. Cumulative discharge from start to that sample date
 
-Q\_{}(t_k) = *{t=1}^{t_k} Q*{}(t)
+$$
+Q_{\text{cum}}(t_k) = \sum_{t=1}^{t_k} Q_{\text{daily}}(t)
+$$
 
 ##### 2. Load for that interval = concentration × discharge volume in interval
 
+$$
+\Delta Q_k = Q_{\text{cum}}(t_k) - Q_{\text{cum}}(t_{k-1})
+$$
+
 ##### 3. Cumulative load over time
+
+$$
+\Delta L_k = C_k \cdot \Delta Q_k
+$$
+
+##### 4. Cumulative load over time
+
+$$
+L_{\text{cum}}(t_k) = \sum_{i=1}^{k} \Delta L_i
+$$
+
+##### 5. Normalized cumulative load
+
+$$
+L_{\text{norm}}(t) = \frac{L_{\text{cum}}(t)}{\max_t L_{\text{cum}}(t)}
+$$
 
 ### =========
 
@@ -539,42 +550,6 @@ site_strip_labs <- c(
   E_winters_up   = "Winters up.",
   F_winters_usgs = "Winters USGS"
 )
-
-# 
-# plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load", 
-#                      flow_label ="flow lab",
-#                      color_var = "tsf") {
-# 
-#   df_norm <- df_norm %>% dplyr::ungroup()
-#   models_tbl <- models_tbl %>%
-#     dplyr::ungroup() %>%
-#     dplyr::mutate(slope_label = paste0("β = ", round(slope, 2)))
-# 
-#   ggplot(df_norm, aes(Q_c_norm, load_c_norm)) +
-#     geom_abline(data = models_tbl, aes(slope = slope, intercept = 0),
-#                 linewidth = 0.5, alpha = 0.8) +
-#     geom_path(alpha = 0.5, linewidth = 1) +
-#     geom_point(aes(color = .data[[color_var]]), size = 2.5, alpha = 0.9) +
-#     geom_point(
-#       data = df_norm %>% filter(storm == "storm"),
-#       shape = 21, fill = NA, color = "black", stroke = 1.5, size = 3
-#     ) +
-#     geom_text(
-#       data = models_tbl,
-#       aes(x = 0.45, y = 0.85, label = slope_label),
-#       hjust = 1.05, vjust = -0.5,
-#       size = 4,
-#       inherit.aes = FALSE
-#     ) +
-#     scale_color_viridis_c(option = "plasma", direction = -1, name= "Days since fire") +
-#     facet_wrap(~ site_OL, nrow = 1,
-#                labeller = labeller(site_OL = as_labeller(site_strip_labs))) +
-#     coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
-#     labs(x = flow_label, y = value_label) +
-#     theme_minimal() +
-#     theme(legend.position = "bottom",
-#           panel.grid.minor = element_blank())
-# }
 
 
 plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load", 
