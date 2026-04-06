@@ -78,9 +78,47 @@ Rationale:
 
 ### Bayesian Models
 
+Two interaction models one including a precipitation × time-since-fire
+term and one including a flow × time-since-fire term produced trivially
+lower or equivalent AIC values but introduced substantial collinearity
+(r = −0.871 between the interaction term and its constituent predictors)
+without meaningful improvement in parsimony. We therefore selected the
+additive model as the basis for the final Bayesian mixed-effects
+regression using the brms package.
+
+Because all solute concentrations are strictly positive and
+right-skewed, we specified a lognormal likelihood. We specified weakly
+informative priors intended to regularize estimation while remaining
+broadly consistent with the observed data. We centered the intercept
+prior on the log of the observed mean solute concentration, providing a
+data-informed starting point while allowing substantial uncertainty.
+
 #### Model Setup
 
+``` r
+# Define priors for TSS lognormal model
+mu0_TSS <- round(log(mean(df_model$TSS, na.rm = TRUE)), 2)
+
+priors_logn_TSS <- c(
+  set_prior(sprintf("normal(%f, 2)", mu0_TSS), class = "Intercept"),
+  set_prior("normal(0, 1)", class = "b"),
+  set_prior("exponential(1)", class = "sd"),
+  set_prior("exponential(1)", class = "sigma")
+)
+```
+
 #### TSS Model
+
+``` r
+# Fit or load TSS Bayesian model
+TSS_m_logn <- fit_brm(
+  model_name = "TSS_lognormal",
+  formula = TSS ~ scale(lag_C_PPT) + scale(tsf) + scale(flow_filled) +
+                  catchment + (1 | catchment:site),
+  data = df_model,
+  family = lognormal(),
+  prior = priors_logn_TSS)
+```
 
 <img src="figures/TSS_diagnostics-1.png" width="80%" /><img src="figures/TSS_diagnostics-2.png" width="80%" />
 

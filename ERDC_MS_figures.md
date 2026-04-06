@@ -17,8 +17,8 @@ Kelly Loria
     ?](#find-the-date-of-the-highest-flow-at-each-site-)
   - [baseflow transition?](#baseflow-transition)
   - [=======================================================](#section-2)
-- [II. MS basin differences in solute
-  concetrations](#ii-ms-basin-differences-in-solute-concetrations)
+- [II. Differences in solute
+  concetrations](#ii-differences-in-solute-concetrations)
   - [=======================================================](#section-3)
 - [2. Basin water quality
   differences](#2-basin-water-quality-differences)
@@ -83,8 +83,8 @@ pre {font-size: 10px}
 
 Based on
 
-1.  Flow for any given day is elevated: (\>μ(previous 7
-    days)+1⋅σ(previous 7 days))
+1.  Flow for any given day is elevated:
+    $$ strom flow = μ_{(previous 7 days)}+1⋅σ_{(previous 7 days)}$$
 
 2.  Rain happened on that day or the prior day
 
@@ -221,7 +221,7 @@ df21 <- df2 %>%
 
 ### =======================================================
 
-## II. MS basin differences in solute concetrations
+## II. Differences in solute concetrations
 
 ### =======================================================
 

@@ -166,7 +166,7 @@ new_df_hydro <-flow_dat %>%
 
 Based on
 
-1. Flow for any given day is elevated: (>μ(previous 7 days)+1⋅σ(previous 7 days))
+1. Flow for any given day is elevated: $$ strom flow = μ_{(previous 7 days)}+1⋅σ_{(previous 7 days)}$$
 
 2. Rain happened on that day or the prior day
 
