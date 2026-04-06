@@ -27,8 +27,6 @@ Kelly Loria
 - [III. Double mass curves: Calculate interval-based
   loads](#iii-double-mass-curves-calculate-interval-based-loads)
   - [=======================================================](#section-5)
-  - [=========](#section-6)
-  - [=========](#section-7)
   - [Core: interval loads + cumulative loads for all
     analytes](#core-interval-loads--cumulative-loads-for-all-analytes)
   - [Fxn to fit DMC models for any
@@ -60,7 +58,7 @@ Kelly Loria
   - [B dynamics](#b-dynamics-1)
   - [Zn dynamics](#zn-dynamics)
 - [Rotated flow time series](#rotated-flow-time-series)
-  - [](#section-9)
+  - [](#section-7)
 
 <style type="text/css">
 body, td {font-size: 12px;}
@@ -434,12 +432,6 @@ Normalize cumulative the discharge at each interval (Qnorm)
 $$
 Q_{\text{norm}}(t) = \frac{Q_{\text{cum}}(t)}{\max_t Q_{\text{cum}}(t)}
 $$
-
-### =========
-
-#### STEP 1: Prepare discharge data (daily values) + DOC loads
-
-### =========
 
 #### One-time setup: parameter tables + helpers
 
