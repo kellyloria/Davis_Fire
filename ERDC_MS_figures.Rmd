@@ -130,12 +130,9 @@ test_dat <- test_dat%>%
 
 ### =======================================================
 
-
  - How do sampling events reflect baseflow or runoff?
  
  - When did the largest transport events happen in each site?
-
-
 
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
 # Chem data
@@ -286,11 +283,9 @@ event_summary <- df_events %>%
 event_summary
 ```
 
-
 ## Figure 2:
 
 ### Runoff and sampling timing as streamflow, sample dates, and ppt 
-
 
 ```{r, warning=F, size = 'small', echo=F, fig.width=9, fig.height=10.25}
 
@@ -457,12 +452,10 @@ Baseflowplot
 
 ```
 
-
 ```{r, echo=FALSE, include =F}
 # ggsave(plot = Baseflowplot, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/baseflow_plot.png",sep=""),width=9.5,height=10,dpi=300)
 
 ```
-
 
 ### Look at run off largest events:
 
@@ -804,8 +797,6 @@ DMC_grid_bp <- ggarrange(
 
 DMC_grid_bp
 
-
-
 ```
 
 ```{r, echo=FALSE, include =F}
@@ -827,34 +818,40 @@ $$
 Q_{\text{cum}}(t_k) = \sum_{t=1}^{t_k} Q_{\text{daily}}(t)
 $$
 
-
-
 ##### 2. Load for that interval = concentration × discharge volume in interval
+Q is daily discharge in liters per day and t is time in days for sample event k. Calculate the discharge volume between the sample interval
 
 $$
 \Delta Q_k = Q_{\text{cum}}(t_k) - Q_{\text{cum}}(t_{k-1})
 $$
 
-##### 3. Cumulative load over time
-
+##### 3. Cumulative solute load over time
+Convert the solute concentration in grams per liter for each solute.Calculate the interval load mass (L) for each solute, between the sampling events. Where concentrations (C) at one interval are representative of the intervening daily values: 
 
 $$
 \Delta L_k = C_k \cdot \Delta Q_k
 $$
 
 ##### 4. Cumulative load over time
+Calculate cumulative solute mass for a given time in the sampling record (Lcum): 
 
 $$
 L_{\text{cum}}(t_k) = \sum_{i=1}^{k} \Delta L_i
 $$
 
-##### 5. Normalized cumulative load
+##### 5. Normalized cumulative solute load
+Normalize cumulative solute load at each interval (Lnorm) for the maximum cumulative solute load from the sampling period.
 
 $$
 L_{\text{norm}}(t) = \frac{L_{\text{cum}}(t)}{\max_t L_{\text{cum}}(t)}
 $$
 
+##### 6. Normalized cumulative water flux
+Normalize cumulative the discharge at each interval (Qnorm)
 
+$$
+Q_{\text{norm}}(t) = \frac{Q_{\text{cum}}(t)}{\max_t Q_{\text{cum}}(t)}
+$$
 
 ### =========
 
@@ -1357,7 +1354,6 @@ DMCres_TSS_plot
 ```
 
 
-
 ## DOC dynamics 
 
 ```{r, warning=F, echo=T, include=T}
@@ -1679,8 +1675,6 @@ DMCres_Ca_plot
 ```
 
 
-
-
 ### Cr dynamics 
 
 ```{r}
@@ -1715,7 +1709,6 @@ DMCres_Cr_plot <- plot_cumul_resid(
 
 DMCres_Cr_plot
 ```
-
 
 
 ### Fe dynamics 
@@ -1795,7 +1788,6 @@ DMCres_Mn_plot
 ```
 
 
-
 ### Pb dynamics 
 
 ```{r}
@@ -1830,8 +1822,6 @@ DMCres_Pb_plot <- plot_cumul_resid(
 
 DMCres_Pb_plot
 ```
-
-
 
 
 ### Sr dynamics 
@@ -1871,8 +1861,6 @@ DMSres_Sr_plot <- plot_cumul_resid(
 
 DMSres_Sr_plot
 ```
-
-
 
 
 ### B dynamics 
@@ -1936,15 +1924,13 @@ DMCres_Zn_plot
 ```
 
 
-
 ####
 
-2026-03-25
 draft of rotated flow histogram 
 
 ### 
 
-```{r,  fig.width=15, fig.height=4, out.width="99%", echo=F}
+```{r,  fig.width=15, fig.height=4, out.width="99%", echo=F, include=TRUE}
 # 
 
 site_strip_labs_v2 <- c(
@@ -2011,6 +1997,7 @@ flow_density_plt <- flow_density_plt +
     legend.position = "bottom",
     axis.title.x = element_blank()
   )
+flow_density_plt
 
 # ggsave(plot = flow_density_plt, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_flow_plot.png",sep=""),width=11,height=2, dpi=300)
 

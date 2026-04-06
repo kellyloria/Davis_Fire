@@ -391,11 +391,19 @@ $$
 
 ##### 2. Load for that interval = concentration × discharge volume in interval
 
+Q is daily discharge in liters per day and t is time in days for sample
+event k. Calculate the discharge volume between the sample interval
+
 $$
 \Delta Q_k = Q_{\text{cum}}(t_k) - Q_{\text{cum}}(t_{k-1})
 $$
 
-##### 3. Cumulative load over time
+##### 3. Cumulative solute load over time
+
+Convert the solute concentration in grams per liter for each
+solute.Calculate the interval load mass (L) for each solute, between the
+sampling events. Where concentrations (C) at one interval are
+representative of the intervening daily values:
 
 $$
 \Delta L_k = C_k \cdot \Delta Q_k
@@ -403,14 +411,28 @@ $$
 
 ##### 4. Cumulative load over time
 
+Calculate cumulative solute mass for a given time in the sampling record
+(Lcum):
+
 $$
 L_{\text{cum}}(t_k) = \sum_{i=1}^{k} \Delta L_i
 $$
 
-##### 5. Normalized cumulative load
+##### 5. Normalized cumulative solute load
+
+Normalize cumulative solute load at each interval (Lnorm) for the
+maximum cumulative solute load from the sampling period.
 
 $$
 L_{\text{norm}}(t) = \frac{L_{\text{cum}}(t)}{\max_t L_{\text{cum}}(t)}
+$$
+
+##### 6. Normalized cumulative water flux
+
+Normalize cumulative the discharge at each interval (Qnorm)
+
+$$
+Q_{\text{norm}}(t) = \frac{Q_{\text{cum}}(t)}{\max_t Q_{\text{cum}}(t)}
 $$
 
 ### =========
@@ -1436,9 +1458,11 @@ bp_Zn
 
 #### 
 
-2026-03-25 draft of rotated flow histogram
+draft of rotated flow histogram
 
 ### 
+
+<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-94-1.png" width="99%" />
 
 #### 
 
