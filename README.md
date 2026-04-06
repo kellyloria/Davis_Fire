@@ -1,8 +1,14 @@
-Analysis for MS : Variation in Seasonal Hydrologic Connectivity Regulates Post-Fire Solute and Metal Dynamics in a Mountain Catchment 
-
-## The Davis Fire 
+# MS: Variation in Seasonal Hydrologic Connectivity Regulates Post-Fire Solute and Metal Dynamics in an Arid Mountain Catchment 
 
 ## Workflow
 - Cleaning scripts for chemistry, biomass, canopy cover and YSI data: https://github.com/kellyloria/Davis_Fire/tree/main/Data_cleaning_scripts
-- Data for concetration - discharge dynamics with in reach location:https://github.com/kellyloria/Davis_Fire/blob/main/ERDC_MS_figures.md
-- Statistical analyses - https://github.com/kellyloria/Davis_Fire/blob/main/ERDC_MS_solute_stats_REFACTORED.Rmd
+  
+## SI for the manuscript 
+- https://github.com/kellyloria/Davis_Fire/blob/main/ERDC_MS_figures.md
+- Stormflow calculations (Figure 2)
+- ANOVA's for differences in solute concetrations (Figure 3)
+- Includes the double mass curve calculations (Figure 4 and 5)
+  
+## Regression analysis
+- https://github.com/kellyloria/Davis_Fire/blob/main/ERDC_MS_solute_regression.md
+- Using Bayesian regression to determine the relative importance of time, streamflow, and precipitation in transporting fire solutes (Figrue 6). 
