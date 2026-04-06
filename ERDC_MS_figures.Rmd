@@ -184,9 +184,23 @@ new_df_hydro <- new_df_hydro %>%
   arrange(site, date) %>%
   group_by(site) %>%
   mutate(
-    flow_filled = na.approx(flow, x = date, na.rm = FALSE)) %>%
+    flow_filled = (flow)) %>%
   ungroup()
 
+# 
+# filled_counts <- new_df_hydro %>%
+#   mutate(filled = is.na(flow) & !is.na(flow_filled)) %>%
+#   group_by(site) %>%
+#   summarise(
+#     n_filled = sum(filled),
+#     .groups = "drop"
+#   )
+# 
+# filled_counts
+
+```
+
+```{r, warning=F, size = 'small', echo=T, include=T}
 
 N <- 3 # Set pre-event window length in days
 
@@ -486,6 +500,31 @@ sum_peakQ
 
 ```
 
+### baseflow transition?
+
+```{r, warning=F, echo=FALSE, include=T}
+library(dplyr)
+library(lubridate)
+
+df_base <- df_plot %>%
+  mutate(
+    WaterYear = if_else(month(date) >= 10, year(date) + 1, year(date)),
+    jday = yday(date)
+  )
+
+df_low_spring <- df_base %>%
+  filter(month(date) >= 4 & month(date) <= 7)
+
+lowflow_transition <- df_low_spring %>%
+  group_by(site, WaterYear) %>%
+  slice_min(dQ, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(site, WaterYear, date, jday, Q, dQ)
+
+lowflow_transition
+
+```
+
 ### ============================================================================
 
 ## II.  MS basin differences in solute concetrations 
@@ -766,7 +805,7 @@ DMC_grid_bp <- ggarrange(
   plotlist = c(plots, list(legend_plot)),
   ncol = 3,
   nrow = 4,
-    labels = LETTERS[1:10],   # A–K
+    labels = letters[1:10],   # A–K
   label.x = 0.08,           # left
   label.y = 0.98,           # top
   hjust = 0,
@@ -795,9 +834,17 @@ DMC_grid_bp
 
 ##### 1. Cumulative discharge from start to that sample date
 
+Q_{\text{cum}}(t_k) = \sum_{t=1}^{t_k} Q_{\text{daily}}(t)
+
+
 ##### 2. Load for that interval = concentration × discharge volume in interval
 
 ##### 3. Cumulative load over time
+
+
+
+
+
 
 ### =========
 
@@ -2103,7 +2150,6 @@ DMC_grid_metals
 # ggsave(plot = DMC_grid_metals, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_metals_grid_plot.png",sep=""),width=11,height=12,dpi=300)
 
 ```
-
 
 
 

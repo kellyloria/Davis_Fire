@@ -1,7 +1,7 @@
 ERDC Davis Fire MS L-Q analysis
 ================
 Kelly Loria
-2026-03-25
+2026-04-06
 
 - [============================================================================](#section)
 - [I. Characterize hydroclimate
@@ -15,6 +15,7 @@ Kelly Loria
   - [Look at run off largest events:](#look-at-run-off-largest-events)
   - [Find the date of the highest flow at each site
     ?](#find-the-date-of-the-highest-flow-at-each-site-)
+  - [baseflow transition?](#baseflow-transition)
   - [============================================================================](#section-2)
 - [II. MS basin differences in solute
   concetrations](#ii-ms-basin-differences-in-solute-concetrations)
@@ -60,6 +61,7 @@ Kelly Loria
   - [Sr dynamics](#sr-dynamics)
   - [B dynamics](#b-dynamics-1)
   - [Zn dynamics](#zn-dynamics)
+  - [](#section-9)
 
 <style type="text/css">
 body, td {font-size: 12px;}
@@ -107,10 +109,22 @@ new_df_hydro <- new_df_hydro %>%
   arrange(site, date) %>%
   group_by(site) %>%
   mutate(
-    flow_filled = na.approx(flow, x = date, na.rm = FALSE)) %>%
+    flow_filled = (flow)) %>%
   ungroup()
 
+# 
+# filled_counts <- new_df_hydro %>%
+#   mutate(filled = is.na(flow) & !is.na(flow_filled)) %>%
+#   group_by(site) %>%
+#   summarise(
+#     n_filled = sum(filled),
+#     .groups = "drop"
+#   )
+# 
+# filled_counts
+```
 
+``` r
 N <- 3 # Set pre-event window length in days
 
 df2 <- new_df_hydro %>%
@@ -179,7 +193,7 @@ df21 <- df2 %>%
 
 ### Runoff and sampling timing as streamflow, sample dates, and ppt
 
-<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-7-1.png" width="80%" />
+<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-8-1.png" width="80%" />
 
 ### Look at run off largest events:
 
@@ -204,6 +218,17 @@ df21 <- df2 %>%
     ## 3 ophir        2025-05-11      0.776 
     ## 4 winters_up   2025-02-05      0.0554
     ## 5 winters_usgs 2025-02-05      0.0309
+
+### baseflow transition?
+
+    ## # A tibble: 5 × 6
+    ##   site         WaterYear date        jday       Q       dQ
+    ##   <chr>            <dbl> <date>     <dbl>   <dbl>    <dbl>
+    ## 1 browns            2025 2025-06-02   153 0.0277  -0.00399
+    ## 2 browns_sub        2025 2025-07-16   197 0.0375  -0.00593
+    ## 3 ophir             2025 2025-05-13   133 0.376   -0.280  
+    ## 4 winters_up        2025 2025-06-02   153 0.0145  -0.00409
+    ## 5 winters_usgs      2025 2025-06-02   153 0.00835 -0.00255
 
 ### ============================================================================
 
@@ -359,7 +384,7 @@ wq_boxplot <- function(data, y, y_lab,
 
 #### Boxplot of solutes
 
-<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-16-1.png" width="85%" />
+<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-18-1.png" width="85%" />
 
 ### ============================================================================
 
@@ -370,6 +395,8 @@ wq_boxplot <- function(data, y, y_lab,
 #### For each chemistry sample, calculate:
 
 ##### 1. Cumulative discharge from start to that sample date
+
+Q\_{}(t_k) = *{t=1}^{t_k} Q*{}(t)
 
 ##### 2. Load for that interval = concentration × discharge volume in interval
 
@@ -513,24 +540,64 @@ site_strip_labs <- c(
   F_winters_usgs = "Winters USGS"
 )
 
+# 
+# plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load", 
+#                      flow_label ="flow lab",
+#                      color_var = "tsf") {
+# 
+#   df_norm <- df_norm %>% dplyr::ungroup()
+#   models_tbl <- models_tbl %>%
+#     dplyr::ungroup() %>%
+#     dplyr::mutate(slope_label = paste0("β = ", round(slope, 2)))
+# 
+#   ggplot(df_norm, aes(Q_c_norm, load_c_norm)) +
+#     geom_abline(data = models_tbl, aes(slope = slope, intercept = 0),
+#                 linewidth = 0.5, alpha = 0.8) +
+#     geom_path(alpha = 0.5, linewidth = 1) +
+#     geom_point(aes(color = .data[[color_var]]), size = 2.5, alpha = 0.9) +
+#     geom_point(
+#       data = df_norm %>% filter(storm == "storm"),
+#       shape = 21, fill = NA, color = "black", stroke = 1.5, size = 3
+#     ) +
+#     geom_text(
+#       data = models_tbl,
+#       aes(x = 0.45, y = 0.85, label = slope_label),
+#       hjust = 1.05, vjust = -0.5,
+#       size = 4,
+#       inherit.aes = FALSE
+#     ) +
+#     scale_color_viridis_c(option = "plasma", direction = -1, name= "Days since fire") +
+#     facet_wrap(~ site_OL, nrow = 1,
+#                labeller = labeller(site_OL = as_labeller(site_strip_labs))) +
+#     coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+#     labs(x = flow_label, y = value_label) +
+#     theme_minimal() +
+#     theme(legend.position = "bottom",
+#           panel.grid.minor = element_blank())
+# }
+
 
 plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load", 
-                     flow_label ="flow lab",
+                     flow_label = "flow lab",
                      color_var = "tsf") {
 
   df_norm <- df_norm %>% dplyr::ungroup()
+
   models_tbl <- models_tbl %>%
     dplyr::ungroup() %>%
     dplyr::mutate(slope_label = paste0("β = ", round(slope, 2)))
 
   ggplot(df_norm, aes(Q_c_norm, load_c_norm)) +
-    geom_abline(data = models_tbl, aes(slope = slope, intercept = 0),
-                linewidth = 0.5, alpha = 0.8) +
-    geom_path(alpha = 0.5, linewidth = 1) +
+    geom_abline(
+      data = models_tbl,
+      aes(slope = slope, intercept = 0),
+      linewidth = 0.5, alpha = 0.8
+    ) +
+    geom_path(alpha = 0.5, linewidth = 1, color = "grey50") +
     geom_point(aes(color = .data[[color_var]]), size = 2.5, alpha = 0.9) +
     geom_point(
       data = df_norm %>% filter(storm == "storm"),
-      shape = 21, fill = NA, color = "black", stroke = 1.5, size = 3
+      shape = 21, fill = NA, color = "black", stroke = 1.3, size = 3
     ) +
     geom_text(
       data = models_tbl,
@@ -539,14 +606,26 @@ plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load",
       size = 4,
       inherit.aes = FALSE
     ) +
-    scale_color_viridis_c(option = "plasma", direction = -1, name= "Days since fire") +
-    facet_wrap(~ site_OL, nrow = 1,
-               labeller = labeller(site_OL = as_labeller(site_strip_labs))) +
+    scale_color_viridis_c(
+      option = "plasma",
+      direction = -1,
+      name = "Days since fire"
+    ) +
+    facet_wrap(
+      ~ site_OL, nrow = 1,
+      labeller = labeller(site_OL = as_labeller(site_strip_labs))
+    ) +
     coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
     labs(x = flow_label, y = value_label) +
     theme_minimal() +
-    theme(legend.position = "bottom",
-          panel.grid.minor = element_blank())
+    theme(
+      legend.position = "bottom",
+      panel.grid.minor = element_blank(),
+      strip.background = element_blank(),
+      strip.text = element_text(size = 10),
+      panel.spacing = unit(1, "lines"),
+      plot.margin = margin(2, 5.5, 2, 5.5)
+    )
 }
 ```
 
@@ -747,8 +826,8 @@ dmc_long <- dmc_long %>%
 library(dplyr)
 
 yield_m3 <- davis_flow %>%
-  filter(date >= as.Date("2024-10-01"),
-         date <= as.Date("2025-09-30")) %>%
+  filter(date >= as.Date("2024-10-15"),
+         date <= as.Date("2025-12-12")) %>%
   group_by(site) %>%
   summarise(
     total_liters = sum(Q_daily_liters, na.rm = TRUE),
@@ -766,11 +845,11 @@ yield_m3
     ## # A tibble: 5 × 4
     ##   site         total_liters total_m3 total_m3_sci
     ##   <chr>               <dbl>    <dbl> <chr>       
-    ## 1 browns         966044299.  966044. 9.66e+05    
-    ## 2 browns_sub    1258347336. 1258347. 1.26e+06    
-    ## 3 ophir         4300801506. 4300802. 4.30e+06    
-    ## 4 winters_up     613834334.  613834. 6.14e+05    
-    ## 5 winters_usgs   347862237.  347862. 3.48e+05
+    ## 1 browns        1108804641. 1108805. 1.11e+06    
+    ## 2 browns_sub    1461072463. 1461072. 1.46e+06    
+    ## 3 ophir         4882639974. 4882640. 4.88e+06    
+    ## 4 winters_up     679303299.  679303. 6.79e+05    
+    ## 5 winters_usgs   382550118.  382550. 3.83e+05
 
 ## TSS
 
@@ -1382,10 +1461,16 @@ bp_Zn
 
 #### 
 
-<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-92-1.png" width="85%" />
+2026-03-25 draft of rotated flow histogram
+
+### 
 
 #### 
 
-<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-94-1.png" width="95%" />
+<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-95-1.png" width="85%" />
+
+#### 
+
+<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-97-1.png" width="95%" />
 
 End of script.
