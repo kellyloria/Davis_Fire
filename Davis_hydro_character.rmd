@@ -183,6 +183,91 @@ ggplotly(plot)
 ```
 
 
+
+```{r, echo=FALSE, include=FALSE}
+
+flow_data <- rbind(flow_data_OP, flow_data_WI, flow_data_DA)  
+flow_data <- water_year(flow_data)
+
+### Find the date of the highest flow at each site ?
+
+sum_peakQ <- flow_data %>%
+  group_by(site, WaterYear) %>%
+  mutate(jday = yday(date)) %>%
+  slice_max(order_by = dischargeCMS, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(site, WaterYear, date, jday, dischargeCMS) 
+
+sum_peakQ
+
+
+sum_peakQ_spr <- flow_data %>%
+  group_by(site, WaterYear) %>%
+  mutate(jday = yday(date)) %>%
+  filter(jday<213) %>% # days before August
+  slice_max(order_by = dischargeCMS, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(site, WaterYear, date, jday, dischargeCMS) 
+
+sum_peakQ_spr
+
+
+
+library(dplyr)
+library(tidyr)
+
+peak_diff <- sum_peakQ_spr %>%
+  filter(site %in% c("ophir", "winters")) %>%   # keep only the two sites
+  select(site, WaterYear, jday, dischargeCMS) %>%
+  pivot_wider(
+    names_from = site,
+    values_from = c(jday, dischargeCMS)
+  ) %>%
+  mutate(
+    diff_jday = jday_ophir - jday_winters,
+    diff_peakQ = dischargeCMS_ophir - dischargeCMS_winters
+  )
+
+peak_diff
+```
+
+
+
+``` {r, echo = F, fig.width=10, fig.height=4, fig.align='center'}
+# Plotting for each site
+plot <- 
+  sum_peakQ_spr%>%
+  ggplot(aes(y = jday, x = WaterYear, shape=site)) +
+    geom_point(alpha = 0.8) +
+  geom_line() +
+ # scale_color_manual(values = site_colors) +
+  #labs(y = "Flow (cms)", color = "Site") +
+  guides(shape = "none") + 
+ # facet_grid(site~., scales="free") +
+  theme_minimal()
+
+ggplotly(plot)
+# Save the plot as a file (e.g., PNG)
+# ggsave("exceedence_probability_vs_discharge.png", plot, width = 4, height = 3, dpi = 300)
+
+
+plot <- 
+  peak_diff%>%
+  ggplot(aes(y = diff_jday, x = WaterYear)) +
+    geom_point(alpha = 0.8) +
+  geom_line() 
+
+
+
+plot <- 
+  peak_diff%>%
+  ggplot(aes(y = diff_peakQ, x = WaterYear)) +
+    geom_point(alpha = 0.8) +
+  geom_line() 
+
+```
+
+
 ```{r, echo=FALSE, include =F}
 
 # ggsave(plot = plot, filename = paste("./Davis_hydrograph.png",sep=""),width=9.25,height=4.5,dpi=300)
@@ -1048,4 +1133,6 @@ write_csv(flow_snow_save, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Shiny
 
 
 ```
+
+
 

@@ -124,11 +124,11 @@ test_dat <- test_dat%>%
 
 ```
 
-### ============================================================================
+### =======================================================
 
 ## I. Characterize hydroclimate condtions
 
-### ============================================================================
+### =======================================================
 
 
  - How do sampling events reflect baseflow or runoff?
@@ -184,9 +184,12 @@ new_df_hydro <- new_df_hydro %>%
   arrange(site, date) %>%
   group_by(site) %>%
   mutate(
-    flow_filled = na.approx(flow, x = date, na.rm = FALSE)) %>%
+    flow_filled = (flow)) %>%
   ungroup()
 
+```
+
+```{r, warning=F, size = 'small', echo=T, include=T}
 
 N <- 3 # Set pre-event window length in days
 
@@ -486,11 +489,36 @@ sum_peakQ
 
 ```
 
-### ============================================================================
+### baseflow transition?
+
+```{r, warning=F, echo=FALSE, include=T}
+library(dplyr)
+library(lubridate)
+
+df_base <- df_plot %>%
+  mutate(
+    WaterYear = if_else(month(date) >= 10, year(date) + 1, year(date)),
+    jday = yday(date)
+  )
+
+df_low_spring <- df_base %>%
+  filter(month(date) >= 4 & month(date) <= 7)
+
+lowflow_transition <- df_low_spring %>%
+  group_by(site, WaterYear) %>%
+  slice_min(dQ, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(site, WaterYear, date, jday, Q, dQ)
+
+lowflow_transition
+
+```
+
+### =======================================================
 
 ## II.  MS basin differences in solute concetrations 
 
-### ============================================================================
+### =======================================================
 
 ## 2. Basin water quality differences 
 
@@ -766,7 +794,7 @@ DMC_grid_bp <- ggarrange(
   plotlist = c(plots, list(legend_plot)),
   ncol = 3,
   nrow = 4,
-    labels = LETTERS[1:10],   # A–K
+    labels = letters[1:10],   # A–K
   label.x = 0.08,           # left
   label.y = 0.98,           # top
   hjust = 0,
@@ -785,19 +813,48 @@ DMC_grid_bp
 
 ```
 
-### ============================================================================
+### =======================================================
 
 ## III. Double mass curves: Calculate interval-based loads
 
-### ============================================================================
+### =======================================================
 
 #### For each chemistry sample, calculate:
 
 ##### 1. Cumulative discharge from start to that sample date
 
+$$
+Q_{\text{cum}}(t_k) = \sum_{t=1}^{t_k} Q_{\text{daily}}(t)
+$$
+
+
+
 ##### 2. Load for that interval = concentration × discharge volume in interval
 
+$$
+\Delta Q_k = Q_{\text{cum}}(t_k) - Q_{\text{cum}}(t_{k-1})
+$$
+
 ##### 3. Cumulative load over time
+
+
+$$
+\Delta L_k = C_k \cdot \Delta Q_k
+$$
+
+##### 4. Cumulative load over time
+
+$$
+L_{\text{cum}}(t_k) = \sum_{i=1}^{k} \Delta L_i
+$$
+
+##### 5. Normalized cumulative load
+
+$$
+L_{\text{norm}}(t) = \frac{L_{\text{cum}}(t)}{\max_t L_{\text{cum}}(t)}
+$$
+
+
 
 ### =========
 
@@ -981,42 +1038,6 @@ site_strip_labs <- c(
   E_winters_up   = "Winters up.",
   F_winters_usgs = "Winters USGS"
 )
-
-# 
-# plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load", 
-#                      flow_label ="flow lab",
-#                      color_var = "tsf") {
-# 
-#   df_norm <- df_norm %>% dplyr::ungroup()
-#   models_tbl <- models_tbl %>%
-#     dplyr::ungroup() %>%
-#     dplyr::mutate(slope_label = paste0("β = ", round(slope, 2)))
-# 
-#   ggplot(df_norm, aes(Q_c_norm, load_c_norm)) +
-#     geom_abline(data = models_tbl, aes(slope = slope, intercept = 0),
-#                 linewidth = 0.5, alpha = 0.8) +
-#     geom_path(alpha = 0.5, linewidth = 1) +
-#     geom_point(aes(color = .data[[color_var]]), size = 2.5, alpha = 0.9) +
-#     geom_point(
-#       data = df_norm %>% filter(storm == "storm"),
-#       shape = 21, fill = NA, color = "black", stroke = 1.5, size = 3
-#     ) +
-#     geom_text(
-#       data = models_tbl,
-#       aes(x = 0.45, y = 0.85, label = slope_label),
-#       hjust = 1.05, vjust = -0.5,
-#       size = 4,
-#       inherit.aes = FALSE
-#     ) +
-#     scale_color_viridis_c(option = "plasma", direction = -1, name= "Days since fire") +
-#     facet_wrap(~ site_OL, nrow = 1,
-#                labeller = labeller(site_OL = as_labeller(site_strip_labs))) +
-#     coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
-#     labs(x = flow_label, y = value_label) +
-#     theme_minimal() +
-#     theme(legend.position = "bottom",
-#           panel.grid.minor = element_blank())
-# }
 
 
 plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load", 
@@ -1938,39 +1959,6 @@ new_df_hydro <- new_df_hydro %>%
   mutate(
     tsf = as.integer(difftime(date, ref_date, units = "days")),
     site = factor(site, levels = site_order))
-# 
-# flow_density_plt <- ggplot(
-#   new_df_hydro %>% 
-#     dplyr::filter(date > as.Date("2024-10-14") & date < as.Date("2025-12-12")) %>%
-#     dplyr::arrange(site, tsf),
-#   aes(x = tsf, y = flow_filled)
-# ) +
-#   geom_segment(
-#     aes(xend = tsf, y = 0, yend = flow_filled, color = tsf),
-#     linewidth = 1.2,
-#     alpha = 0.9
-#   ) +
-#   geom_line(
-#     aes(color = tsf),
-#     linewidth = 0.7
-#   ) +
-#   facet_wrap(~site, nrow = 1, scales = "free_y", 
-#                            labeller = labeller(site = as_labeller(site_strip_labs_v2))) +
-#   scale_color_viridis_c(
-#     option = "plasma",
-#     direction = -1,
-#     name = "Days since fire"
-#   ) +
-#   labs(x= "Days since fire", y = expression(flow~(m^3~s^-1))) +
-#   theme_cowplot() +
-#   theme(
-#     legend.position = "bottom",
-#     strip.background = element_blank(),
-#     strip.text = element_text(size = 10)
-#   )
-# 
-# flow_density_plt
-
 
 flow_density_plt <- ggplot(
   new_df_hydro %>% 
@@ -2103,7 +2091,6 @@ DMC_grid_metals
 # ggsave(plot = DMC_grid_metals, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_metals_grid_plot.png",sep=""),width=11,height=12,dpi=300)
 
 ```
-
 
 
 
