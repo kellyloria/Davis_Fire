@@ -2332,38 +2332,26 @@ model_plt <- coeff_plt_df %>%
 print(model_plt)
 
 # #Save figure
-ggsave(
-  filename = file.path(fig_dir, "ERDC_coeff_plts_GPHS.png"),
-  plot = model_plt,
-  width = 5.25,
-  height = 7.5,
-  dpi = 300
-)
+# ggsave(
+#   filename = file.path(fig_dir, "ERDC_coeff_plts_GPHS.png"),
+#   plot = model_plt,
+#   width = 5.25,
+#   height = 7.5,
+#   dpi = 300
+# )
 
 ```
-
-## Session Info
-
-
 
 ```{r, echo=FALSE, include =F}
 # ggsave(plot = DMCres_grid_metals, filename = paste("./Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_res_metals_grid_plot_SI.png",sep=""),width=6,height=20,dpi=300)
 
 ```
 
+
+## Session Info
+
 ```{r session_info, echo=FALSE}
 sessionInfo()
 ```
 
----
-
-###  
-
-```r
-# Clear all cached results
-unlink("_cache", recursive = TRUE)
-unlink("models", recursive = TRUE)
-
-# Re-render (will take 2-3 hours for all models)
-rmarkdown::render("ERDC_MS_solute_stats_REFACTORED.Rmd")
-```
+End of script. 

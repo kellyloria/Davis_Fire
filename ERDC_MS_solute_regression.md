@@ -12,7 +12,6 @@ Kelly Loria
   - [Bayesian Models](#bayesian-models)
 - [Combined Results](#combined-results)
 - [Session Info](#session-info)
-  - [](#section)
 
 <style type="text/css">
 body, td {font-size: 12px;}
@@ -847,15 +846,4 @@ Al Model Effects (Log and Exponentiated Scale)
     ## [106] mvtnorm_1.3-2        scales_1.4.0         e1071_1.7-16        
     ## [109] crayon_1.5.3         rlang_1.1.6          multcomp_1.4-26
 
-------------------------------------------------------------------------
-
-### 
-
-``` r
-# Clear all cached results
-unlink("_cache", recursive = TRUE)
-unlink("models", recursive = TRUE)
-
-# Re-render (will take 2-3 hours for all models)
-rmarkdown::render("ERDC_MS_solute_stats_REFACTORED.Rmd")
-```
+End of script.
