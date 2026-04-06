@@ -285,7 +285,7 @@ event_summary <- df_events %>%
 event_summary
 ```
 
-## Figure 2:
+## *Figure 2:*
 
 ### Runoff and sampling timing as streamflow, sample dates, and ppt 
 
@@ -515,7 +515,7 @@ lowflow_transition
 
 ### =======================================================
 
-## 2. Basin water quality differences 
+### Catchment water quality differences 
 
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
 # Read in TSS data
@@ -603,8 +603,8 @@ wq_boxplot <- function(data, y, y_lab,
   # helper: p formatting - MODIFIED for 2 sig figs
   fmt_p <- function(p) {
     if (is.na(p)) return("p = NA")
-    if (p < 0.001) return("p < 0.001")  # Changed: return statement for clarity
-    if (p >= 0.001) return(paste0("p = ", signif(p, 2)))  # Changed: 2 sig figs instead of 3
+    if (p < 0.001) return("p < 0.001")  
+    if (p >= 0.001) return(paste0("p = ", signif(p, 2)))  
   }
   
   make_anova_text <- function(dat) {
@@ -623,10 +623,10 @@ wq_boxplot <- function(data, y, y_lab,
     df2 <- sm[["Df"]][2]
     pv  <- sm[["Pr(>F)"]][1]
     
-    # CHANGE 2: Only return text if p < 0.09
+    # Only return text if p < 0.09
     if (!is.na(pv) && pv >= 0.09) return(NULL)
     
-    # CHANGE 1: Use "reach" instead of site_name
+    # "reach" instead of site_name
     paste0(
       "ANOVA (reach)\n",
       "F(", df1, ", ", df2, ") = ", round(Fv, anova_label_digits), "\n",
@@ -657,7 +657,7 @@ wq_boxplot <- function(data, y, y_lab,
             fit <- aov(reformulate(".site", response = ".y_num"), data = .x2)
             pv <- summary(fit)[[1]][["Pr(>F)"]][1]
             
-            # CHANGE 2: Set label to NULL if p >= 0.09
+            # Set label to NULL if p >= 0.09
             if (!is.na(pv) && pv >= 0.09) {
               tibble(p = pv, label = as.character(NA))
             } else {
@@ -757,7 +757,7 @@ SrB_QC_plot  <- wq_boxplot(df_WQ_plot, Sr_B_QC, expression(Sr:B~(mu*g~L^-1)),  h
 
 ```
 
-## Figure 3:
+## *Figure 3:*
 
 #### Boxplot of solutes
 
@@ -856,7 +856,7 @@ Q_{\text{norm}}(t) = \frac{Q_{\text{cum}}(t)}{\max_t Q_{\text{cum}}(t)}
 $$
 
 
-#### One-time setup: parameter tables + helpers
+### One-time setup: parameter tables + helpers
 
 ```{r, warning=F, echo=FALSE, include=T}
 # Which analytes to include + unit conversion to mg/L
@@ -897,7 +897,7 @@ label_site <- function(site){
 
 ```
 
-#### Flow + storm flags 
+### Flow + storm flags 
 
 ```{r, warning=F, echo=T, include=T}
 prep_flow <- function(new_df_hydro, flow_start = as.Date("2024-10-15"), flow_end = as.Date("2025-12-11")) {
@@ -1255,11 +1255,11 @@ plot_cumul_resid <- function(resid_df,
 
 ```{r, warning=F, echo=T, include=T}
 
-# 1) Prep once
+# 1) Prep hydro df
 davis_flow <- prep_flow(new_df_hydro, flow_start = as.Date("2024-10-15"), flow_end = as.Date("2025-12-11"))
 storm <- prep_storm_flags(event_summary, test_keys)
 
-# optional: flow summary
+# Flow summary
 davis_flow %>%
   group_by(site) %>%
   summarise(
@@ -1268,10 +1268,10 @@ davis_flow %>%
     .groups = "drop"
   )
 
-# 2) Loads for all analytes (one call)
+# 2) Loads for all analytes 
 dmc_long <- prep_chem_loads_long(merged_df%>%filter(site!="davis"), davis_flow, storm, analytes)
 
-# 3) Add tsf once (if ref_date exists in env)
+# 3) Add tsf 
 dmc_long <- dmc_long %>%
   mutate(tsf = as.integer(difftime(date, ref_date, units = "days")))
 
@@ -1281,8 +1281,6 @@ dmc_long <- dmc_long %>%
 ### quick water yield calculation for the sampling period
 
 ```{r, warning=F, echo=T, include=T}
-
-
 library(dplyr)
 
 yield_m3 <- davis_flow %>%
@@ -1301,10 +1299,9 @@ yield_m3 <- davis_flow %>%
 
 yield_m3
 
-
 ```
 
-## TSS
+### TSS
 
 ```{r, warning=F, echo=T, include=T}
 TSS_fit   <- fit_dmc(dmc_long, "TSS")
@@ -1350,7 +1347,7 @@ DMCres_TSS_plot
 ```
 
 
-## DOC dynamics 
+### DOC dynamics 
 
 ```{r, warning=F, echo=T, include=T}
 DOC_fit   <- fit_dmc(dmc_long, "DOC")
@@ -1393,7 +1390,7 @@ DMCres_DOC_plot
 
 
 
-## TDN dynamics 
+### TDN dynamics 
 
 ```{r}
 TDN_fit   <- fit_dmc(dmc_long, "TDN")
@@ -1920,11 +1917,14 @@ DMCres_Zn_plot
 ```
 
 
-#### ====
 
-## Rotated flow time series
+### =======================================================
 
-### 
+## IV. Visualize DMC
+
+### =======================================================
+
+### Rotated flow time series
 
 ```{r,  fig.width=15, fig.height=4, out.width="99%", echo=F, include=TRUE}
 # 
@@ -2000,10 +2000,7 @@ flow_density_plt
 
 ```
 
-
-
-
-####
+## *Figure 4:*
 
 ```{r,  fig.width=10, fig.height=11, out.width="85%", echo=F}
 
@@ -2035,7 +2032,7 @@ DMC_grid_nuts
 
 ```
 
-#### 
+## *Figure 5:*
 
 ```{r,  fig.width=12, fig.height=15, out.width="95%", echo=FALSE}
 

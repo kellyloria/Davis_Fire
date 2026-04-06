@@ -9,7 +9,7 @@ Kelly Loria
   - [=======================================================](#section-1)
   - [Create variable that corresponds with PPT flow
     increase](#create-variable-that-corresponds-with-ppt-flow-increase)
-- [Figure 2:](#figure-2)
+- [*Figure 2:*](#figure-2)
   - [Runoff and sampling timing as streamflow, sample dates, and
     ppt](#runoff-and-sampling-timing-as-streamflow-sample-dates-and-ppt)
   - [Look at run off largest events:](#look-at-run-off-largest-events)
@@ -20,13 +20,16 @@ Kelly Loria
 - [II. Differences in solute
   concentrations](#ii-differences-in-solute-concentrations)
   - [=======================================================](#section-3)
-- [2. Basin water quality
-  differences](#2-basin-water-quality-differences)
-- [Figure 3:](#figure-3)
+  - [Catchment water quality
+    differences](#catchment-water-quality-differences)
+- [*Figure 3:*](#figure-3)
   - [=======================================================](#section-4)
 - [III. Double mass curves: Calculate interval-based
   loads](#iii-double-mass-curves-calculate-interval-based-loads)
   - [=======================================================](#section-5)
+  - [One-time setup: parameter tables +
+    helpers](#one-time-setup-parameter-tables--helpers)
+  - [Flow + storm flags](#flow--storm-flags)
   - [Core: interval loads + cumulative loads for all
     analytes](#core-interval-loads--cumulative-loads-for-all-analytes)
   - [Fxn to fit DMC models for any
@@ -41,9 +44,9 @@ Kelly Loria
     storms)](#fxn-for-companion-plot-c-residuals--breakpoint-markers--storms)
   - [quick water yield calculation for the sampling
     period](#quick-water-yield-calculation-for-the-sampling-period)
-- [TSS](#tss)
-- [DOC dynamics](#doc-dynamics)
-- [TDN dynamics](#tdn-dynamics)
+  - [TSS](#tss)
+  - [DOC dynamics](#doc-dynamics)
+  - [TDN dynamics](#tdn-dynamics)
   - [PO4 dynamics](#po4-dynamics)
   - [Al dynamics](#al-dynamics)
   - [As dynamics](#as-dynamics)
@@ -57,8 +60,12 @@ Kelly Loria
   - [Sr dynamics](#sr-dynamics)
   - [B dynamics](#b-dynamics-1)
   - [Zn dynamics](#zn-dynamics)
-- [Rotated flow time series](#rotated-flow-time-series)
-  - [](#section-7)
+  - [=======================================================](#section-6)
+- [IV. Visualize DMC](#iv-visualize-dmc)
+  - [=======================================================](#section-7)
+  - [Rotated flow time series](#rotated-flow-time-series)
+- [*Figure 4:*](#figure-4)
+- [*Figure 5:*](#figure-5)
 
 <style type="text/css">
 body, td {font-size: 12px;}
@@ -176,7 +183,7 @@ df21 <- df2 %>%
     ## # ℹ 3 more variables: peak_flow_date <date>, total_ppt_mm <dbl>,
     ## #   peak_ppt_mm <dbl>
 
-## Figure 2:
+## *Figure 2:*
 
 ### Runoff and sampling timing as streamflow, sample dates, and ppt
 
@@ -223,7 +230,7 @@ df21 <- df2 %>%
 
 ### =======================================================
 
-## 2. Basin water quality differences
+### Catchment water quality differences
 
 ``` r
 library(dplyr)
@@ -257,8 +264,8 @@ wq_boxplot <- function(data, y, y_lab,
   # helper: p formatting - MODIFIED for 2 sig figs
   fmt_p <- function(p) {
     if (is.na(p)) return("p = NA")
-    if (p < 0.001) return("p < 0.001")  # Changed: return statement for clarity
-    if (p >= 0.001) return(paste0("p = ", signif(p, 2)))  # Changed: 2 sig figs instead of 3
+    if (p < 0.001) return("p < 0.001")  
+    if (p >= 0.001) return(paste0("p = ", signif(p, 2)))  
   }
   
   make_anova_text <- function(dat) {
@@ -277,10 +284,10 @@ wq_boxplot <- function(data, y, y_lab,
     df2 <- sm[["Df"]][2]
     pv  <- sm[["Pr(>F)"]][1]
     
-    # CHANGE 2: Only return text if p < 0.09
+    # Only return text if p < 0.09
     if (!is.na(pv) && pv >= 0.09) return(NULL)
     
-    # CHANGE 1: Use "reach" instead of site_name
+    # "reach" instead of site_name
     paste0(
       "ANOVA (reach)\n",
       "F(", df1, ", ", df2, ") = ", round(Fv, anova_label_digits), "\n",
@@ -311,7 +318,7 @@ wq_boxplot <- function(data, y, y_lab,
             fit <- aov(reformulate(".site", response = ".y_num"), data = .x2)
             pv <- summary(fit)[[1]][["Pr(>F)"]][1]
             
-            # CHANGE 2: Set label to NULL if p >= 0.09
+            # Set label to NULL if p >= 0.09
             if (!is.na(pv) && pv >= 0.09) {
               tibble(p = pv, label = as.character(NA))
             } else {
@@ -367,7 +374,7 @@ wq_boxplot <- function(data, y, y_lab,
 }
 ```
 
-## Figure 3:
+## *Figure 3:*
 
 #### Boxplot of solutes
 
@@ -433,9 +440,9 @@ $$
 Q_{\text{norm}}(t) = \frac{Q_{\text{cum}}(t)}{\max_t Q_{\text{cum}}(t)}
 $$
 
-#### One-time setup: parameter tables + helpers
+### One-time setup: parameter tables + helpers
 
-#### Flow + storm flags
+### Flow + storm flags
 
 ``` r
 prep_flow <- function(new_df_hydro, flow_start = as.Date("2024-10-15"), flow_end = as.Date("2025-12-11")) {
@@ -777,11 +784,11 @@ plot_cumul_resid <- function(resid_df,
 ```
 
 ``` r
-# 1) Prep once
+# 1) Prep hydro df
 davis_flow <- prep_flow(new_df_hydro, flow_start = as.Date("2024-10-15"), flow_end = as.Date("2025-12-11"))
 storm <- prep_storm_flags(event_summary, test_keys)
 
-# optional: flow summary
+# Flow summary
 davis_flow %>%
   group_by(site) %>%
   summarise(
@@ -801,10 +808,10 @@ davis_flow %>%
     ## 5 winters_usgs     382550118.              793.
 
 ``` r
-# 2) Loads for all analytes (one call)
+# 2) Loads for all analytes 
 dmc_long <- prep_chem_loads_long(merged_df%>%filter(site!="davis"), davis_flow, storm, analytes)
 
-# 3) Add tsf once (if ref_date exists in env)
+# 3) Add tsf 
 dmc_long <- dmc_long %>%
   mutate(tsf = as.integer(difftime(date, ref_date, units = "days")))
 ```
@@ -840,7 +847,7 @@ yield_m3
     ## 4 winters_up     679303299.  679303. 6.79e+05    
     ## 5 winters_usgs   382550118.  382550. 3.83e+05
 
-## TSS
+### TSS
 
 ``` r
 TSS_fit   <- fit_dmc(dmc_long, "TSS")
@@ -878,7 +885,7 @@ bp_TSS
     ## 5 F_winters_usgs <tibble>      0.549 2025-04-02        0.196    2.06        1.87
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
-## DOC dynamics
+### DOC dynamics
 
 ``` r
 DOC_fit   <- fit_dmc(dmc_long, "DOC")
@@ -916,7 +923,7 @@ bp_DOC
     ## 5 F_winters_usgs <tibble>      0.222 2025-01-22        0.641   1.12        0.476
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
-## TDN dynamics
+### TDN dynamics
 
 ``` r
 TDN_fit   <- fit_dmc(dmc_long, "TDN")
@@ -1448,19 +1455,21 @@ bp_Zn
     ## 5 F_winters_usgs <tibble>      0.419 2025-03-12        0.358    1.45       1.09 
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
-#### ====
+### =======================================================
 
-## Rotated flow time series
+## IV. Visualize DMC
 
-### 
+### =======================================================
+
+### Rotated flow time series
 
 <img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-94-1.png" width="99%" />
 
-#### 
+## *Figure 4:*
 
 <img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-95-1.png" width="85%" />
 
-#### 
+## *Figure 5:*
 
 <img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-97-1.png" width="95%" />
 
