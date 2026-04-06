@@ -4,6 +4,10 @@ subtitle: "Linear models for flow, ppt, tsm and solute concentrations"
 author: "Kelly Loria"
 date: "`r Sys.Date()`"
 output:
+  github_document:
+    toc: true
+  pdf_document: 
+    toc: true
   html_document:
     theme: united
     highlight: tango
@@ -11,8 +15,6 @@ output:
     toc_float: true
     code_folding: hide
     self_contained: true
-  pdf_document: 
-    toc: true
 editor_options:
   markdown:
     wrap: 72
