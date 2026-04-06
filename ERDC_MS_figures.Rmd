@@ -509,7 +509,7 @@ lowflow_transition
 
 ### =======================================================
 
-## II.  MS basin differences in solute concetrations 
+## II.  Differences in solute concetrations 
 
 ### =======================================================
 
