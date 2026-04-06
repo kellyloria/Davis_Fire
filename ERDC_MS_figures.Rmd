@@ -126,7 +126,7 @@ test_dat <- test_dat%>%
 
 ### =======================================================
 
-## I. Characterize hydroclimate condtions
+## I. Characterize hydroclimate conditions
 
 ### =======================================================
 
@@ -511,7 +511,7 @@ lowflow_transition
 
 ### =======================================================
 
-## II.  Differences in solute concetrations 
+## II.  Differences in solute concentrations 
 
 ### =======================================================
 
@@ -903,7 +903,7 @@ label_site <- function(site){
 
 ```
 
-### Flow + storm flags (unchanged logic, but isolated)
+#### Flow + storm flags 
 
 ```{r, warning=F, echo=T, include=T}
 prep_flow <- function(new_df_hydro, flow_start = as.Date("2024-10-15"), flow_end = as.Date("2025-12-11")) {
@@ -1284,7 +1284,7 @@ dmc_long <- dmc_long %>%
 ```
 
 
-### quick water yield calculation for just water year 2025
+### quick water yield calculation for the sampling period
 
 ```{r, warning=F, echo=T, include=T}
 
@@ -1926,9 +1926,9 @@ DMCres_Zn_plot
 ```
 
 
-####
+#### ====
 
-draft of rotated flow histogram 
+## Rotated flow time series
 
 ### 
 

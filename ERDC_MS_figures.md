@@ -5,7 +5,7 @@ Kelly Loria
 
 - [=======================================================](#section)
 - [I. Characterize hydroclimate
-  condtions](#i-characterize-hydroclimate-condtions)
+  conditions](#i-characterize-hydroclimate-conditions)
   - [=======================================================](#section-1)
   - [Create variable that corresponds with PPT flow
     increase](#create-variable-that-corresponds-with-ppt-flow-increase)
@@ -18,7 +18,7 @@ Kelly Loria
   - [baseflow transition?](#baseflow-transition)
   - [=======================================================](#section-2)
 - [II. Differences in solute
-  concetrations](#ii-differences-in-solute-concetrations)
+  concentrations](#ii-differences-in-solute-concentrations)
   - [=======================================================](#section-3)
 - [2. Basin water quality
   differences](#2-basin-water-quality-differences)
@@ -29,8 +29,6 @@ Kelly Loria
   - [=======================================================](#section-5)
   - [=========](#section-6)
   - [=========](#section-7)
-  - [Flow + storm flags (unchanged logic, but
-    isolated)](#flow--storm-flags-unchanged-logic-but-isolated)
   - [Core: interval loads + cumulative loads for all
     analytes](#core-interval-loads--cumulative-loads-for-all-analytes)
   - [Fxn to fit DMC models for any
@@ -43,8 +41,8 @@ Kelly Loria
     site](#breakpoint-detection-davies--segmented-by-site)
   - [Fxn for companion plot (C residuals + breakpoint markers +
     storms)](#fxn-for-companion-plot-c-residuals--breakpoint-markers--storms)
-  - [quick water yield calculation for just water year
-    2025](#quick-water-yield-calculation-for-just-water-year-2025)
+  - [quick water yield calculation for the sampling
+    period](#quick-water-yield-calculation-for-the-sampling-period)
 - [TSS](#tss)
 - [DOC dynamics](#doc-dynamics)
 - [TDN dynamics](#tdn-dynamics)
@@ -61,6 +59,7 @@ Kelly Loria
   - [Sr dynamics](#sr-dynamics)
   - [B dynamics](#b-dynamics-1)
   - [Zn dynamics](#zn-dynamics)
+- [Rotated flow time series](#rotated-flow-time-series)
   - [](#section-9)
 
 <style type="text/css">
@@ -71,7 +70,7 @@ pre {font-size: 10px}
 
 ### =======================================================
 
-## I. Characterize hydroclimate condtions
+## I. Characterize hydroclimate conditions
 
 ### =======================================================
 
@@ -84,7 +83,8 @@ pre {font-size: 10px}
 Based on
 
 1.  Flow for any given day is elevated:
-    $$ strom flow = μ_{(previous 7 days)}+1⋅σ_{(previous 7 days)}$$
+
+$$ strom flow = μ_{(previous 7 days)}+1⋅σ_{(previous 7 days)}$$
 
 2.  Rain happened on that day or the prior day
 
@@ -221,7 +221,7 @@ df21 <- df2 %>%
 
 ### =======================================================
 
-## II. Differences in solute concetrations
+## II. Differences in solute concentrations
 
 ### =======================================================
 
@@ -443,7 +443,7 @@ $$
 
 #### One-time setup: parameter tables + helpers
 
-### Flow + storm flags (unchanged logic, but isolated)
+#### Flow + storm flags
 
 ``` r
 prep_flow <- function(new_df_hydro, flow_start = as.Date("2024-10-15"), flow_end = as.Date("2025-12-11")) {
@@ -817,7 +817,7 @@ dmc_long <- dmc_long %>%
   mutate(tsf = as.integer(difftime(date, ref_date, units = "days")))
 ```
 
-### quick water yield calculation for just water year 2025
+### quick water yield calculation for the sampling period
 
 ``` r
 library(dplyr)
@@ -1456,9 +1456,9 @@ bp_Zn
     ## 5 F_winters_usgs <tibble>      0.419 2025-03-12        0.358    1.45       1.09 
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
-#### 
+#### ====
 
-draft of rotated flow histogram
+## Rotated flow time series
 
 ### 
 
