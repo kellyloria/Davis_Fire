@@ -8,7 +8,10 @@
 - Storm flow calculations (Figure 2)
 - ANOVA's for differences in solute concentrations (Figure 3)
 - Double mass curve calculations (Figure 4 and 5)
+- Uses ERDC_MS_water_chem_dat.csv, ERDC_MS_hydroclim_dat.csv and Davis_MS_fxnflow.csv
+
   
 ## Regression analysis
 - https://github.com/kellyloria/Davis_Fire/blob/main/ERDC_MS_solute_regression.md
-- Using Bayesian regression to determine the relative importance of time, streamflow, and precipitation in transporting fire solutes (Figrue 6). 
+- Using Bayesian regression to determine the relative importance of time, streamflow, and precipitation in transporting fire solutes (Figrue 6).
+- Uses ERDC_MS_water_chem_dat.csv and ERDC_MS_hydroclim_dat.csv
