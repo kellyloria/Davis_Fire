@@ -100,65 +100,29 @@ water_year <- function(data) {
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
 # Chem data
 
-test_dat <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_only_chem_dat_processed.csv") %>%
-  dplyr::select(-site) %>%   
-  rename(site = site_lab) %>%  
-  filter(site !="davis") %>%
+test_dat <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Dryad_data/ERDC_MS_water_chem_dat.csv") %>%
   mutate(
     date = as.Date(date),
     datetime = as.POSIXct(datetime) 
   ) %>%
     mutate(date=as.Date(date),
-         datetime =as.POSIXct(datetime)) %>%
-    mutate(burn_area = case_when(
-    site== "ophir" ~ 0,
-    site == "winters_usgs" ~ 65,
-    site == "winters_up" ~ 62,
-    site == "browns" ~ 42, 
-    site == "browns_sub" ~ 41)) 
-
-### Create a new column for Sr:B
-test_dat <- test_dat%>%
-  mutate(Sr_B_QC = c(Sr_QC/B_QC))
-
-
+         datetime =as.POSIXct(datetime)) 
 ```
 
 
 
 ## I. Characterize hydroclimate conditions
 
-
-
  - How do sampling events reflect baseflow or runoff?
  
  - When did the largest transport events happen in each site?
 
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
-# Chem data
 
-flow_dat <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_hourlyflow.csv") %>%
-  mutate(date=as.Date(date)) %>%  filter((site!="davis")) %>%
-    mutate(Name = case_when(
-    site== "ophir" ~ "ophir",
-    site == "winters_usgs" ~ "winters",
-    site == "winters_up" ~ "winters",
-    site == "browns" ~ "browns", 
-    site == "browns_sub" ~ "browns"))
-
-str(flow_dat)
-
-# Load precipitation data
-ppt_dat <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/prism_cat_new.csv") %>%
-  filter((Name!="davis")) %>%
+# Load flow and precipitation data
+new_df_hydro <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Dryad_data/ERDC_MS_hydroclim_dat.csv") %>%
   mutate(
-    date = as.Date(Date, format = "%Y-%m-%d"),
-    lagPPT = lag(ppt..mm.),
-    lag_C_PPT = ppt..mm. + lagPPT) %>%
-  dplyr::select(Name, date, ppt..mm., lag_C_PPT)
-
-new_df_hydro <-flow_dat %>%
-  left_join(ppt_dat, by=c("date", "Name")) 
+    date = as.Date(date, format = "%Y-%m-%d"))
 
 ```
 
@@ -189,6 +153,7 @@ new_df_hydro <- new_df_hydro %>%
 ```
 
 ```{r, warning=F, size = 'small', echo=T, include=T}
+library(dplyr)
 
 N <- 3 # Set pre-event window length in days
 
@@ -454,8 +419,254 @@ Baseflowplot
 
 ```
 
+
+
+### Runoff and sampling timing as streamflow, sample dates, and ppt 
+
+```{r, warning=F, size = 'small', echo=F, fig.width=9, fig.height=10.25}
+
+library(dplyr)
+library(ggplot2)
+
+hydro_labeled <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/Davis_MS_fxnflow_hydro_labeled.csv") %>%
+  mutate(date = as.Date(date))
+
+
+plot_start <- as.Date("2024-09-05")
+plot_end   <- as.Date("2025-12-15")
+
+
+flow_segments <- hydro_labeled %>%
+  dplyr::mutate(date = as.Date(date)) %>%
+  dplyr::filter(!is.na(.data$component), !is.na(.data$component_run_id)) %>%
+  dplyr::arrange(.data$site, .data$analysis_year, .data$date) %>%
+  dplyr::group_by(.data$site, .data$analysis_year, .data$component, .data$component_run_id) %>%
+  dplyr::summarise(
+    seg_start = min(.data$date, na.rm = TRUE),
+    seg_end   = max(.data$date, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    seg_start = pmax(seg_start, plot_start),
+    seg_end   = pmin(seg_end, plot_end),
+    site = factor(site, levels = site_order)
+  ) %>%
+  dplyr::filter(seg_start <= seg_end)
+
+# y-position for segment bars near bottom of each facet
+segment_y <- df_plot_norm %>%
+  dplyr::group_by(site) %>%
+  dplyr::summarise(
+    seg_y = max(flow_norm, na.rm = TRUE) * 0.0015,
+    .groups = "drop"
+  )
+
+
+component_cols <- c(
+  fall_pulse_flow       = "#707070",
+  wet_season_baseflow   = "#FFFFFF",
+  peak_flow             = "#000000",
+  spring_recession_flow = "#dedede",
+  dry_season_baseflow   = "#FFFFFF"
+)
+
+
+flow_segments_plot <- flow_segments %>%
+  dplyr::left_join(segment_y, by = "site")
+
+site_labs <- c(
+browns = "Browns",
+browns_sub = "Browns sub.",
+davis = "Davis",
+ophir = "Ophir",
+winters_up = "Winters up.",
+winters_usgs = "Winters USGS"
+)
+library(ggnewscale)
+
+
+# 1) sampling keys (unique site-date combos)
+test_keys <- test_dat %>%
+  transmute(
+    site   = site,
+    date   = as.Date(date),
+    est_obs = "yes"
+  ) %>%
+  distinct(site, date, .keep_all = TRUE)
+
+# 2) join + fill non-sampled days
+df_plot <- df2 %>%
+  mutate(date = as.Date(date)) %>%
+  full_join(test_keys, by = c("site", "date")) %>%
+  mutate(est_obs = if_else(is.na(est_obs), "no", est_obs))
+
+site_order <- c(
+  "ophir",
+  "browns_sub",
+  "browns",
+  "winters_up",
+  "winters_usgs")
+
+
+site_strip_labs <- c(
+  ophir        = "Ophir",
+  browns_sub   = "Browns sub.",
+  browns       = "Browns",
+  winters_up   = "Winters up.",
+  winters_usgs = "Winters USGS"
+)
+
+
+df_plot_norm <- df_plot %>%
+  filter(date < as.Date("2025-12-13"))   %>% 
+  mutate(
+    catchment_area = case_when(
+      site == "ophir"         ~ 50.1,
+      site == "davis"         ~ 4.3,
+      site == "browns"        ~ 9.8,
+      site == "browns_sub"    ~ 9.4,
+      site == "winters_usgs"  ~ 5.4,
+      site == "winters_up"    ~ 4.8,
+      TRUE ~ NA_real_ ),
+    
+    # normalized flow (choose flow or flow_filled)
+    flow_norm = c(flow / catchment_area)
+    # or: flow_norm = flow_filled / catchment_area
+    )
+
+df_plot_norm <- df_plot_norm %>%
+  mutate(
+    site = factor(site, levels = site_order))
+
+
+###
+event_rects <- event_summary %>%
+  dplyr::filter(!is.na(event_start_date), !is.na(event_end_date)) %>%
+  dplyr::filter(duration_days>=1) %>%
+  dplyr::mutate(
+    xmin = event_start_date - 0.5,
+    xmax = event_end_date + 0.5 )
+
+event_rects <- event_rects %>%
+  mutate(
+    site = factor(site, levels = site_order))
+
+Baseflowplot <- local({
+
+  df_plot_ppt <- df_plot_norm 
+  # Use only the plotted window to get sensible scaling
+  Q_top <- max(df_plot_norm$flow_norm, na.rm = TRUE) * 0.95
+  PPT_max <- max(df_plot_norm$ppt..mm., na.rm = TRUE)
+  k <- Q_top / PPT_max
+
+  df <- df_plot_norm %>%
+    mutate(
+      PPT_ymin = Q_top - k * ppt..mm. * 0.5,
+      PPT_ymax = Q_top)
+
+  ggplot(df, aes(x = date)) +
+ # # add in storms
+    # geom_rect(
+    # data = event_rects,
+    # aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+    # inherit.aes = FALSE,
+    # fill = "grey70",
+    # alpha = 0.5 ) +
+
+    geom_rect(
+      aes(
+        xmin = date - 0.5, xmax = date + 0.5,
+        ymin = PPT_ymin, ymax = PPT_ymax,
+        fill = site
+      ),
+      alpha = 0.75,
+      inherit.aes = FALSE )   +
+    
+    
+   # functional-flow segments
+  ggnewscale::new_scale_color() +
+  
+  geom_segment(
+    data = flow_segments_plot,
+    aes(
+      x = seg_start,
+      xend = seg_end,
+      y = seg_y,
+      yend = seg_y,
+      color = component
+    ),
+    inherit.aes = FALSE,
+    linewidth = 1.75,
+    lineend = "butt",
+    alpha = 0.9
+  ) +
+  
+  scale_color_manual(
+    values = component_cols,
+    name = "Functional flow\ncomponent",
+    labels = c(
+      fall_pulse_flow       = "Fall pulse",
+      wet_season_baseflow   = "Baseflow",
+      peak_flow             = "Peak flow",
+      spring_recession_flow = "Spring recession",
+      dry_season_baseflow   = ""
+    )
+  ) +
+    ggnewscale::new_scale_color() +
+    geom_line(aes(y = flow_norm, color = site), linewidth = 0.9) +
+    scale_color_manual(
+      values = site_colors,
+      labels = site_labs,
+      name = "Site"
+      ) +
+
+    facet_grid(site ~ ., scales = "free",
+                 labeller = labeller(site = as_labeller(site_strip_labs))) +
+
+    scale_fill_manual(
+      values = c(site_colors),
+      labels = site_labs,
+      name = "Site"
+    ) +
+
+    scale_y_continuous(
+      limits = c(0, Q_top),
+      name = expression(Catchment~normalized~streamflow~(m^3~s^-1~km^-1)),
+      sec.axis = sec_axis(
+        trans = ~ (Q_top - .) / k,
+        name  = "PPT (mm)"
+      )
+    ) +
+    geom_point(
+    data = df %>% filter(est_obs == "yes"),
+    aes(x = date, y = flow_norm),
+    shape = 4,
+    fill = NA,
+    color = "black",
+    stroke = 1.2,
+    size = 1.15,
+    na.rm = TRUE
+  ) +
+    geom_vline(xintercept = as.Date("2024-09-25"), linetype = "dashed") +
+
+
+ facet_grid(site~., scales = "free_y",
+              labeller = labeller(site = as_labeller(site_strip_labs))) +
+
+    xlab("Date") +
+    theme_classic() +
+    theme(legend.position = "right")  +
+      scale_x_date(limits = c(as.Date("2024-09-05"), as.Date("2025-12-15")),
+        date_breaks = "2 month", date_labels = "%b-%y",
+          expand = c(0, 0)) 
+})
+
+Baseflowplot
+
+```
+
 ```{r, echo=FALSE, include =F}
-# ggsave(plot = Baseflowplot, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/baseflow_plot.png",sep=""),width=9.5,height=10,dpi=300)
+# ggsave(plot = Baseflowplot, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/baseflow_plot_v2.png",sep=""),width=7.25,height=8.25,dpi=300)
 
 ```
 
@@ -753,7 +964,6 @@ Sr_plot  <- wq_boxplot(df_WQ_plot, Sr_QC, expression(Sr~(mu*g~L^-1)),  hline = 0
 
 Zn_plot  <- wq_boxplot(df_WQ_plot, Zn_QC, expression(Zn~(mu*g~L^-1)),  hline = 0.1,  site_colors = site_colors)
 
-SrB_QC_plot  <- wq_boxplot(df_WQ_plot, Sr_B_QC, expression(Sr:B~(mu*g~L^-1)),  hline = 1,  site_colors = site_colors)
 
 ```
 
@@ -864,7 +1074,6 @@ $$
 analytes <- tibble::tribble(
   ~analyte, ~col,        ~togL,
   "DOC",    "DOC_QC",     1,
-  "BC",     "BC_QC",      1,
   "TOC",    "TOC_QC",     1,
   "TDN",    "TDN_QC",     1,
   "PO4_P",  "PO4.P_QC",   1,
@@ -879,7 +1088,6 @@ analytes <- tibble::tribble(
   "Sr",     "Sr_QC",      1/1000,
   "Zn",     "Zn_QC",      1/1000,
   "B",      "B_QC",       1/1000,
-  "Sr_B",   "Sr_B_QC",    1/1000,
   "TSS",      "TSS",      1,
 )
 
@@ -1033,7 +1241,7 @@ site_strip_labs <- c(
 )
 
 
-plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load", 
+plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load",
                      flow_label = "flow lab",
                      color_var = "tsf") {
 
@@ -1086,7 +1294,8 @@ plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load",
 
 ```
 
-### Fxn for DMC residuals (cumulative) 
+# ### Fxn for DMC residuals (cumulative) 
+
 
 ```{r, warning=F, echo=T, include=T}
 calc_cumul_resid <- function(df_norm, models_tbl) {
@@ -1104,6 +1313,7 @@ calc_cumul_resid <- function(df_norm, models_tbl) {
     ungroup() %>%
     dplyr::select(-model)
 }
+
 
 ```
 
@@ -1318,10 +1528,10 @@ inference_TSS
 inference_TSS <- infer_slopes_vs1(models_TSS)
 
 DMC_TSS_plot <- plot_dmc(
-  df_norm    = davis_TSS,
+  df_norm = davis_TSS,
   models_tbl = inference_TSS,
   flow_label = NULL,
-  value_label = "Norm. TSS", #expression(Norm.~TSS~(mg~L^-1))
+  value_label = "Norm. TSS"
 )
 
 DMC_TSS_plot
@@ -1924,10 +2134,305 @@ DMCres_Zn_plot
 
 
 
-### Rotated flow time series
+### Flow time series
 
 ```{r,  fig.width=15, fig.height=4, out.width="99%", echo=F, include=TRUE}
 # 
+
+# 
+# 
+
+# 
+# site_strip_labs_v2 <- c(
+#   ophir        = "Ophir",
+#   browns_sub   = "Browns sub.",
+#   browns       = "Browns",
+#   winters_up   = "Winters up.",
+#   winters_usgs = "Winters USGS"
+# )
+# 
+# new_df_hydro <- new_df_hydro %>%
+#   mutate(
+#     tsf = as.integer(difftime(date, ref_date, units = "days")),
+#     site = factor(site, levels = site_order))
+# 
+# flow_density_plt <- ggplot(
+#   new_df_hydro %>%
+#     dplyr::filter(date > as.Date("2024-10-14") & date < as.Date("2025-12-12")) %>%
+#     dplyr::arrange(site, tsf),
+#   aes(x = tsf, y = flow_filled)
+# ) +
+#   
+#     # functional-flow bars at bottom
+#   geom_segment(
+#     data = flow_segments_plot_tsf,
+#     aes(
+#       x = seg_start_tsf,
+#       xend = seg_end_tsf,
+#       y = seg_y,
+#       yend = seg_y,
+#       color = component
+#     ),
+#     inherit.aes = FALSE,
+#     linewidth = 2.5,
+#     lineend = "butt",
+#     alpha = 0.95
+#   ) +
+#   scale_color_manual(
+#     values = component_cols,
+#     name = "Functional flow\ncomponent",
+#     labels = c(
+#       fall_pulse_flow       = "Fall pulse",
+#       wet_season_baseflow   = "Wet-season baseflow",
+#       peak_flow             = "Peak flow",
+#       spring_recession_flow = "Spring recession",
+#       dry_season_baseflow   = "Dry-season baseflow"
+#     )
+#   ) +
+#     # reset color scale for tsf-colored flow
+#   ggnewscale::new_scale_color() +
+#   
+#   geom_segment(
+#     aes(xend = tsf, y = 0, yend = flow_filled, color = tsf),
+#     linewidth = 1.1,
+#     alpha = 0.9
+#   ) +
+#   geom_line(
+#     aes(color = tsf),
+#     linewidth = 0.7,
+#     alpha = 0.9
+#   ) +
+# 
+#   facet_wrap(
+#     ~site, nrow = 1, scales = "free_y",
+#     labeller = labeller(site = as_labeller(site_strip_labs_v2))
+#   ) +
+#   scale_color_viridis_c(
+#     option = "plasma",
+#     direction = -1,
+#     name = "Days since fire"
+#   ) +
+#   labs(
+#     x = NULL,   # remove if this is not the bottom row
+#     y = expression(Flow~(m^3~s^-1))
+#   ) +
+#   theme_void() +
+#   theme(
+#     legend.position = "bottom",
+#     panel.grid.minor = element_blank(),
+#     strip.background = element_blank(),
+#     strip.text = element_text(size = 10),
+#     panel.spacing = unit(1, "lines"),
+#     plot.margin = margin(5.5, 5.5, 2, 5.5),
+#     axis.title.x = element_blank(),
+#     axis.text.x = element_text(size = 9),
+#     axis.text.y = element_text(size = 9),
+#     axis.title.y = element_text(size = 11)
+#   )
+# 
+# flow_density_plt <- flow_density_plt +
+#   theme(
+#     plot.margin = margin(0, 10.5, 0, 10.5),
+#     panel.spacing = unit(0.9, "lines"),
+#     axis.title.y = element_text(size = 11, angle = 90, vjust = 0.5),
+#     legend.position = "bottom",
+#     axis.title.x = element_blank()
+#   )
+# flow_density_plt
+# 
+# flow_segments_plot_tsf <- flow_segments_plot_tsf %>%
+#   left_join(segment_y_flow, by = "site")
+# 
+# names(flow_segments_plot_tsf)
+# names(segment_y_flow)
+# dplyr::count(flow_segments_plot_tsf, site)
+# dplyr::count(segment_y_flow, site)
+# 
+# 
+# segment_y_flow <- new_df_hydro %>%
+#   dplyr::filter(date > as.Date("2024-10-14") & date < as.Date("2025-12-12")) %>%
+#   dplyr::mutate(site = as.character(site)) %>%
+#   dplyr::group_by(site) %>%
+#   dplyr::summarise(
+#     seg_y = -max(flow, na.rm = TRUE) * 0.04,
+#     .groups = "drop"
+#   )
+# 
+# flow_segments_plot_tsf <- flow_segments_plot %>%
+#   dplyr::mutate(
+#     seg_start = as.Date(seg_start),
+#     seg_end   = as.Date(seg_end),
+#     seg_start_tsf = as.integer(difftime(seg_start, ref_date, units = "days")),
+#     seg_end_tsf   = as.integer(difftime(seg_end, ref_date, units = "days")),
+#     site = as.character(site)
+#   ) %>%
+#   dplyr::left_join(segment_y_flow, by = "site")
+# 
+# library(dplyr)
+# library(ggplot2)
+# library(ggnewscale)
+# 
+# site_strip_labs_v2 <- c(
+#   ophir        = "Ophir",
+#   browns_sub   = "Browns sub.",
+#   browns       = "Browns",
+#   winters_up   = "Winters up.",
+#   winters_usgs = "Winters USGS"
+# )
+# 
+# component_cols <- c(
+#   fall_pulse_flow       = "#4D4D4D",
+#   wet_season_baseflow   = "#BDBDBD",
+#   peak_flow             = "#000000",
+#   spring_recession_flow = "#737373",
+#   dry_season_baseflow   = "#E0E0E0"
+# )
+# 
+# # make sure hydro data has tsf
+# new_df_hydro <- new_df_hydro %>%
+#   mutate(
+#     date = as.Date(date),
+#     tsf = as.integer(difftime(date, ref_date, units = "days")),
+#     site = factor(site, levels = site_order)
+#   )
+# 
+# # convert functional-flow segment dates to tsf for this plot
+# flow_segments_plot_tsf <- flow_segments_plot %>%
+#   mutate(
+#     seg_start = as.Date(seg_start),
+#     seg_end   = as.Date(seg_end),
+#     seg_start_tsf = as.integer(difftime(seg_start, ref_date, units = "days")),
+#     seg_end_tsf   = as.integer(difftime(seg_end, ref_date, units = "days")),
+#     site = factor(site, levels = site_order)
+#   )
+# 
+# # choose a low y-position for the bars in each facet
+# segment_y_flow <- new_df_hydro %>%
+#   filter(date > as.Date("2024-10-14") & date < as.Date("2025-12-12")) %>%
+#   group_by(site) %>%
+#   summarise(
+#     seg_y = -max(flow_filled, na.rm = TRUE) * 0.04,
+#     .groups = "drop"
+#   )
+# 
+# 
+# segment_y_flow <- new_df_hydro %>%
+#   dplyr::filter(date > as.Date("2024-10-14") & date < as.Date("2025-12-12")) %>%
+#   dplyr::mutate(site = as.character(site)) %>%
+#   dplyr::group_by(site) %>%
+#   dplyr::summarise(
+#     seg_y = -max(flow, na.rm = TRUE) * 0.04,
+#     .groups = "drop"
+#   )
+# 
+# 
+# flow_segments_plot_tsf <- flow_segments_plot_tsf %>%
+#   left_join(segment_y_flow, by = "site")
+# 
+# flow_density_plt <- ggplot(
+#   new_df_hydro %>%
+#     filter(date > as.Date("2024-10-14") & date < as.Date("2025-12-12")) %>%
+#     arrange(site, tsf),
+#   aes(x = tsf, y = flow_filled)
+# ) +
+#   
+#   # functional-flow bars at bottom
+#   geom_segment(
+#     data = flow_segments_plot_tsf,
+#     aes(
+#       x = seg_start_tsf,
+#       xend = seg_end_tsf,
+#       y = seg_y,
+#       yend = seg_y,
+#       color = component
+#     ),
+#     inherit.aes = FALSE,
+#     linewidth = 2.5,
+#     lineend = "butt",
+#     alpha = 0.95
+#   ) +
+#   scale_color_manual(
+#     values = component_cols,
+#     name = "Functional flow\ncomponent",
+#     labels = c(
+#       fall_pulse_flow       = "Fall pulse",
+#       wet_season_baseflow   = "Wet-season baseflow",
+#       peak_flow             = "Peak flow",
+#       spring_recession_flow = "Spring recession",
+#       dry_season_baseflow   = "Dry-season baseflow"
+#     )
+#   ) +
+#   
+#   # reset color scale for tsf-colored flow
+#   ggnewscale::new_scale_color() +
+#   
+#   geom_segment(
+#     aes(xend = tsf, y = 0, yend = flow_filled, color = tsf),
+#     linewidth = 1.1,
+#     alpha = 0.9
+#   ) +
+#   geom_line(
+#     aes(color = tsf),
+#     linewidth = 0.7,
+#     alpha = 0.9
+#   ) +
+#   
+#   facet_wrap(
+#     ~site, nrow = 1, scales = "free_y",
+#     labeller = labeller(site = as_labeller(site_strip_labs_v2))
+#   ) +
+#   
+#   scale_color_viridis_c(
+#     option = "plasma",
+#     direction = -1,
+#     name = "Days since fire"
+#   ) +
+#   
+#   labs(
+#     x = NULL,
+#     y = expression(Flow~(m^3~s^-1))
+#   ) +
+#   
+#   theme_void() +
+#   theme(
+#     legend.position = "bottom",
+#     panel.grid.minor = element_blank(),
+#     strip.background = element_blank(),
+#     strip.text = element_text(size = 10),
+#     panel.spacing = unit(1, "lines"),
+#     plot.margin = margin(5.5, 5.5, 2, 5.5),
+#     axis.title.x = element_blank(),
+#     axis.text.x = element_text(size = 9),
+#     axis.text.y = element_text(size = 9),
+#     axis.title.y = element_text(size = 11)
+#   ) +
+#   
+#   # allow room below zero for the bars
+#   scale_y_continuous(
+#     limits = c(
+#       min(flow_segments_plot_tsf$seg_y, na.rm = TRUE) * 1.2,
+#       NA
+#     )
+#   )
+
+# ggsave(plot = flow_density_plt, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_flow_plot.png",sep=""),width=11.25,height=2, dpi=300)
+
+
+
+library(dplyr)
+library(ggplot2)
+library(ggnewscale)
+
+# ---------------------------------------------------------
+# Site order and labels
+# ---------------------------------------------------------
+site_order <- c(
+  "ophir",
+  "browns_sub",
+  "browns",
+  "winters_up",
+  "winters_usgs"
+)
 
 site_strip_labs_v2 <- c(
   ophir        = "Ophir",
@@ -1937,19 +2442,92 @@ site_strip_labs_v2 <- c(
   winters_usgs = "Winters USGS"
 )
 
-new_df_hydro <- new_df_hydro %>%
-  mutate(
-    tsf = as.integer(difftime(date, ref_date, units = "days")),
-    site = factor(site, levels = site_order))
+component_cols <- c(
+  fall_pulse_flow       = "#707070",
+  wet_season_baseflow   = "#FFFFFF",
+  peak_flow             = "#000000",
+  spring_recession_flow = "#dedede",
+  dry_season_baseflow   = "#FFFFFF"
+)
 
+plot_start <- as.Date("2024-10-14")
+plot_end   <- as.Date("2025-12-12")
+
+# ---------------------------------------------------------
+# Prepare hydrograph data for plotting
+# ---------------------------------------------------------
+flow_plot_dat <- new_df_hydro %>%
+  mutate(
+    date = as.Date(date),
+    tsf  = as.integer(difftime(date, ref_date, units = "days")),
+    site = factor(as.character(site), levels = site_order),
+    flow_plot = dplyr::coalesce(flow_filled, flow)
+  ) %>%
+  filter(date > plot_start, date < plot_end) %>%
+  arrange(site, tsf)
+
+# ---------------------------------------------------------
+# Prepare functional-flow bars for plotting
+# ---------------------------------------------------------
+segment_y_flow <- flow_plot_dat %>%
+  mutate(site = as.character(site)) %>%
+  group_by(site) %>%
+  summarise(
+    seg_y = -max(flow_plot, na.rm = TRUE) * 0.04,
+    .groups = "drop"
+  )
+
+flow_segments_plot_tsf <- flow_segments %>%
+  mutate(
+    seg_start = as.Date(seg_start),
+    seg_end   = as.Date(seg_end),
+    seg_start_tsf = as.integer(difftime(seg_start, ref_date, units = "days")),
+    seg_end_tsf   = as.integer(difftime(seg_end, ref_date, units = "days")),
+    site = as.character(site)
+  ) %>%
+  filter(seg_end >= plot_start, seg_start <= plot_end) %>%
+  left_join(segment_y_flow, by = "site") %>%
+  mutate(
+    site = factor(site, levels = site_order)
+  )
+
+# ---------------------------------------------------------
+# Plot
+# ---------------------------------------------------------
 flow_density_plt <- ggplot(
-  new_df_hydro %>% 
-    dplyr::filter(date > as.Date("2024-10-14") & date < as.Date("2025-12-12")) %>%
-    dplyr::arrange(site, tsf),
-  aes(x = tsf, y = flow_filled)
+  flow_plot_dat,
+  aes(x = tsf, y = flow_plot)
 ) +
+  # functional-flow bars at bottom
   geom_segment(
-    aes(xend = tsf, y = 0, yend = flow_filled, color = tsf),
+    data = flow_segments_plot_tsf,
+    aes(
+      x = seg_start_tsf,
+      xend = seg_end_tsf,
+      y = seg_y,
+      yend = seg_y,
+      color = component
+    ),
+    inherit.aes = FALSE,
+    linewidth = 2.5,
+    lineend = "butt",
+    alpha = 0.95
+  ) +
+  scale_color_manual(
+    values = component_cols,
+    name = "Functional flow\ncomponent",
+    labels = c(
+      fall_pulse_flow       = "Fall pulse",
+      wet_season_baseflow   = "Baseflow",
+      peak_flow             = "Peak flow",
+      spring_recession_flow = "Spring recession",
+      dry_season_baseflow   = "Baseflow"
+    )
+  ) +
+  # new color scale for tsf-colored flow
+  ggnewscale::new_scale_color() +
+  geom_segment(
+    aes(xend = tsf, y = 0, yend = flow_plot, color = tsf),
     linewidth = 1.1,
     alpha = 0.9
   ) +
@@ -1959,7 +2537,9 @@ flow_density_plt <- ggplot(
     alpha = 0.9
   ) +
   facet_wrap(
-    ~site, nrow = 1, scales = "free_y",
+    ~site,
+    nrow = 1,
+    scales = "free_y",
     labeller = labeller(site = as_labeller(site_strip_labs_v2))
   ) +
   scale_color_viridis_c(
@@ -1967,8 +2547,11 @@ flow_density_plt <- ggplot(
     direction = -1,
     name = "Days since fire"
   ) +
+  # scale_y_continuous(
+  #   limits = c(min(flow_segments_plot_tsf$seg_y, na.rm = TRUE) * 1.2, NA)
+  # ) +
   labs(
-    x = NULL,   # remove if this is not the bottom row
+    x = NULL,
     y = expression(Flow~(m^3~s^-1))
   ) +
   theme_void() +
@@ -1977,26 +2560,15 @@ flow_density_plt <- ggplot(
     panel.grid.minor = element_blank(),
     strip.background = element_blank(),
     strip.text = element_text(size = 10),
-    panel.spacing = unit(1, "lines"),
-    plot.margin = margin(5.5, 5.5, 2, 5.5),
+    panel.spacing = unit(0.9, "lines"),
+    plot.margin = margin(0, 10.5, 0, 10.5),
     axis.title.x = element_blank(),
     axis.text.x = element_text(size = 9),
     axis.text.y = element_text(size = 9),
-    axis.title.y = element_text(size = 11)
+    axis.title.y = element_text(size = 11, angle = 90, vjust = 0.5)
   )
 
-flow_density_plt <- flow_density_plt +
-  theme(
-    plot.margin = margin(0, 10.5, 0, 10.5),
-    panel.spacing = unit(0.9, "lines"),
-    axis.title.y = element_text(size = 11, angle = 90, vjust = 0.5),
-    legend.position = "bottom",
-    axis.title.x = element_blank()
-  )
 flow_density_plt
-
-# ggsave(plot = flow_density_plt, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/DMLC_flow_plot.png",sep=""),width=11,height=2, dpi=300)
-
 
 ```
 

@@ -1,7 +1,7 @@
 ERDC Davis Fire MS L-Q analysis
 ================
 Kelly Loria
-2026-04-06
+2026-05-27
 
 - [I. Characterize hydroclimate
   conditions](#i-characterize-hydroclimate-conditions)
@@ -10,6 +10,8 @@ Kelly Loria
 - [*Figure 2:*](#figure-2)
   - [Runoff and sampling timing as streamflow, sample dates, and
     ppt](#runoff-and-sampling-timing-as-streamflow-sample-dates-and-ppt)
+  - [Runoff and sampling timing as streamflow, sample dates, and
+    ppt](#runoff-and-sampling-timing-as-streamflow-sample-dates-and-ppt-1)
   - [Look at run off largest events:](#look-at-run-off-largest-events)
   - [Find the date of the highest flow at each site
     ?](#find-the-date-of-the-highest-flow-at-each-site-)
@@ -30,8 +32,8 @@ Kelly Loria
     analyte](#fxn-to-fit-dmc-models-for-any-analyte)
   - [Inference](#inference)
   - [Plotting fxn for DMC](#plotting-fxn-for-dmc)
-  - [Fxn for DMC residuals
-    (cumulative)](#fxn-for-dmc-residuals-cumulative)
+- [\### Fxn for DMC residuals
+  (cumulative)](#-fxn-for-dmc-residuals-cumulative)
   - [Breakpoint detection (Davies + segmented) by
     site](#breakpoint-detection-davies--segmented-by-site)
   - [Fxn for companion plot (C residuals + breakpoint markers +
@@ -54,10 +56,10 @@ Kelly Loria
   - [Sr dynamics](#sr-dynamics)
   - [B dynamics](#b-dynamics-1)
   - [Zn dynamics](#zn-dynamics)
-- [IV. Visualize DMC](#iv-visualize-dmc)
-  - [Rotated flow time series](#rotated-flow-time-series)
-- [*Figure 4:*](#figure-4)
-- [*Figure 5:*](#figure-5)
+  - [IV. Visualize DMC](#iv-visualize-dmc)
+    - [Flow time series](#flow-time-series)
+  - [*Figure 4:*](#figure-4)
+  - [*Figure 5:*](#figure-5)
 
 <style type="text/css">
 body, td {font-size: 12px;}
@@ -88,13 +90,13 @@ library(slider)
 head(new_df_hydro)
 ```
 
-    ##     site       date       flow   Name ppt..mm. lag_C_PPT
-    ## 1 browns 2024-09-01 0.01888417 browns       NA        NA
-    ## 2 browns 2024-09-02 0.01781396 browns       NA        NA
-    ## 3 browns 2024-09-03 0.01792508 browns       NA        NA
-    ## 4 browns 2024-09-04 0.01905485 browns       NA        NA
-    ## 5 browns 2024-09-05 0.01826480 browns       NA        NA
-    ## 6 browns 2024-09-06 0.01822308 browns       NA        NA
+    ##     site       date       flow   Name ppt..mm. lag_C_PPT flow_filled
+    ## 1 browns 2024-09-16 0.01863762 browns       NA        NA  0.01863762
+    ## 2 browns 2024-09-17 0.02403078 browns       NA        NA  0.02403078
+    ## 3 browns 2024-09-18 0.02447408 browns       NA        NA  0.02447408
+    ## 4 browns 2024-09-19 0.02549920 browns       NA        NA  0.02549920
+    ## 5 browns 2024-09-20 0.02378022 browns       NA        NA  0.02378022
+    ## 6 browns 2024-09-21 0.02333245 browns       NA        NA  0.02333245
 
 ``` r
 ### infill missing flow:
@@ -107,6 +109,8 @@ new_df_hydro <- new_df_hydro %>%
 ```
 
 ``` r
+library(dplyr)
+
 N <- 3 # Set pre-event window length in days
 
 df2 <- new_df_hydro %>%
@@ -157,16 +161,16 @@ df21 <- df2 %>%
     ## # A tibble: 139 × 9
     ##    site   event_id_lf event_start_date event_end_date duration_days peak_flow
     ##    <chr>        <int> <date>           <date>                 <int>     <dbl>
-    ##  1 browns           7 2024-10-17       2024-10-18                 2    0.0279
-    ##  2 browns           9 2024-10-28       2024-10-30                 3    0.0335
-    ##  3 browns          10 2024-11-12       2024-11-15                 4    0.0396
-    ##  4 browns          11 2024-11-21       2024-11-23                 3    0.0428
-    ##  5 browns          13 2024-12-14       2024-12-14                 1    0.0359
-    ##  6 browns          14 2024-12-17       2024-12-17                 1    0.0389
-    ##  7 browns          15 2024-12-22       2024-12-22                 1    0.0410
-    ##  8 browns          16 2024-12-29       2024-12-30                 2    0.0419
-    ##  9 browns          20 2025-02-01       2025-02-03                 3    0.0509
-    ## 10 browns          21 2025-02-05       2025-02-05                 1    0.0582
+    ##  1 browns           5 2024-10-17       2024-10-18                 2    0.0279
+    ##  2 browns           7 2024-10-28       2024-10-30                 3    0.0335
+    ##  3 browns           8 2024-11-12       2024-11-15                 4    0.0396
+    ##  4 browns           9 2024-11-21       2024-11-23                 3    0.0428
+    ##  5 browns          11 2024-12-14       2024-12-14                 1    0.0359
+    ##  6 browns          12 2024-12-17       2024-12-17                 1    0.0389
+    ##  7 browns          13 2024-12-22       2024-12-22                 1    0.0410
+    ##  8 browns          14 2024-12-29       2024-12-30                 2    0.0419
+    ##  9 browns          18 2025-02-01       2025-02-03                 3    0.0509
+    ## 10 browns          19 2025-02-05       2025-02-05                 1    0.0582
     ## # ℹ 129 more rows
     ## # ℹ 3 more variables: peak_flow_date <date>, total_ppt_mm <dbl>,
     ## #   peak_ppt_mm <dbl>
@@ -177,16 +181,20 @@ df21 <- df2 %>%
 
 <img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-8-1.png" width="80%" />
 
+### Runoff and sampling timing as streamflow, sample dates, and ppt
+
+<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-9-1.png" width="80%" />
+
 ### Look at run off largest events:
 
     ## # A tibble: 5 × 9
     ##   site       event_id_lf event_start_date event_end_date duration_days peak_flow
     ##   <chr>            <int> <date>           <date>                 <int>     <dbl>
-    ## 1 browns              21 2025-02-05       2025-02-05                 1    0.0582
-    ## 2 browns_sub          36 2025-05-13       2025-05-14                 2    0.0515
-    ## 3 ophir               32 2025-04-30       2025-05-04                 5    0.627 
-    ## 4 winters_up          21 2025-02-05       2025-02-05                 1    0.0554
-    ## 5 winters_u…          21 2025-02-05       2025-02-05                 1    0.0309
+    ## 1 browns              19 2025-02-05       2025-02-05                 1    0.0582
+    ## 2 browns_sub          34 2025-05-13       2025-05-14                 2    0.0515
+    ## 3 ophir               30 2025-04-30       2025-05-04                 5    0.627 
+    ## 4 winters_up          19 2025-02-05       2025-02-05                 1    0.0554
+    ## 5 winters_u…          19 2025-02-05       2025-02-05                 1    0.0309
     ## # ℹ 3 more variables: peak_flow_date <date>, total_ppt_mm <dbl>,
     ## #   peak_ppt_mm <dbl>
 
@@ -362,7 +370,7 @@ wq_boxplot <- function(data, y, y_lab,
 
 #### Boxplot of solutes
 
-<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-18-1.png" width="85%" />
+<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-19-1.png" width="85%" />
 
 ## III. Double mass curves: Calculate interval-based loads
 
@@ -553,7 +561,7 @@ site_strip_labs <- c(
 )
 
 
-plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load", 
+plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load",
                      flow_label = "flow lab",
                      color_var = "tsf") {
 
@@ -605,7 +613,7 @@ plot_dmc <- function(df_norm, models_tbl, value_label = "N.C. load",
 }
 ```
 
-### Fxn for DMC residuals (cumulative)
+# \### Fxn for DMC residuals (cumulative)
 
 ``` r
 calc_cumul_resid <- function(df_norm, models_tbl) {
@@ -784,7 +792,7 @@ davis_flow %>%
     ## 1 browns          1108804641.              772.
     ## 2 browns_sub      1461072463.              772.
     ## 3 ophir           4882639974.              933.
-    ## 4 winters_up       679303299.              793.
+    ## 4 winters_up       679303298.              793.
     ## 5 winters_usgs     382550118.              793.
 
 ``` r
@@ -824,7 +832,7 @@ yield_m3
     ## 1 browns        1108804641. 1108805. 1.11e+06    
     ## 2 browns_sub    1461072463. 1461072. 1.46e+06    
     ## 3 ophir         4882639974. 4882640. 4.88e+06    
-    ## 4 winters_up     679303299.  679303. 6.79e+05    
+    ## 4 winters_up     679303298.  679303. 6.79e+05    
     ## 5 winters_usgs   382550118.  382550. 3.83e+05
 
 ### TSS
@@ -1298,11 +1306,11 @@ inference_Pb
     ## # Groups:   site_OL [5]
     ##   site_OL n_samples slope std_error   lwr   upr   p.value  p_vs_1 interpretation
     ##   <chr>       <int> <dbl>     <dbl> <dbl> <dbl>     <dbl>   <dbl> <chr>         
-    ## 1 A_ophir        24 1      1.88e-17 1      1    0         1   e+0 Proportional:…
-    ## 2 C_brow…        15 1      4.41e-17 1      1    2.33e-222 2.46e-2 Dilution: dis…
-    ## 3 D_brow…        15 1      3.72e-17 1      1    2.18e-223 9.92e-3 Dilution: dis…
+    ## 1 A_ophir        24 1      4.87e-17 1      1    0         1   e+0 Proportional:…
+    ## 2 C_brow…        15 1      1.95e-17 1      1    2.53e-227 1.82e-8 Enrichment: l…
+    ## 3 D_brow…        15 1      7.40e-17 1      1    3.28e-219 1.56e-1 Proportional:…
     ## 4 E_wint…        18 0.985  1.19e- 2 0.960  1.01 1.39e- 23 2.29e-1 Proportional:…
-    ## 5 F_wint…        23 1      4.67e-17 1      1    0         9.45e-5 Enrichment: l…
+    ## 5 F_wint…        23 1      3.13e-17 1      1    0         4.00e-7 Enrichment: l…
 
 ``` r
 Pb_resid <- calc_cumul_resid(Pb_fit$df, Pb_fit$models)
@@ -1314,11 +1322,11 @@ bp_Pb
     ## # Groups:   site_OL [5]
     ##   site_OL        data     breakpoint breakpoint_date slope_1 slope_2 delta_slope
     ##   <chr>          <list>        <dbl> <date>            <dbl>   <dbl>       <dbl>
-    ## 1 A_ophir        <tibble>      0.641 2025-05-14        1        1          0    
+    ## 1 A_ophir        <tibble>      0.952 2025-11-19        1        1          0    
     ## 2 C_browns_sub   <tibble>     NA     NA                1       NA         NA    
-    ## 3 D_browns       <tibble>     NA     NA                1       NA         NA    
+    ## 3 D_browns       <tibble>      0.938 2025-11-05        1        1          0    
     ## 4 E_winters_up   <tibble>      0.667 2025-05-14        0.889    1.31       0.420
-    ## 5 F_winters_usgs <tibble>      0.684 2025-05-14        1        1          0    
+    ## 5 F_winters_usgs <tibble>      0.735 2025-05-14        1        1          0    
     ## # ℹ 2 more variables: davies_p <dbl>, note <chr>
 
 ### Sr dynamics
@@ -1437,16 +1445,16 @@ bp_Zn
 
 ## IV. Visualize DMC
 
-### Rotated flow time series
+### Flow time series
 
-<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-94-1.png" width="99%" />
+<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-95-1.png" width="99%" />
 
 ## *Figure 4:*
 
-<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-95-1.png" width="85%" />
+<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-96-1.png" width="85%" />
 
 ## *Figure 5:*
 
-<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-97-1.png" width="95%" />
+<img src="ERDC_MS_figures_files/figure-gfm/unnamed-chunk-98-1.png" width="95%" />
 
 End of script.
