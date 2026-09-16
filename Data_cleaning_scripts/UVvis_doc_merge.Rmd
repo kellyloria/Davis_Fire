@@ -1,0 +1,630 @@
+---
+title: 'Epilithic biomass over time'
+author: "Kelly Loria"
+date: "`r Sys.Date()`"
+output:
+   html_document:
+    theme: united
+    highlight: tango
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{=html}
+<style type="text/css">
+body, td {font-size: 12px;}
+code.r{font-size: 8px;}
+pre {font-size: 10px}
+</style>
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = F, message = F)
+#knitr::opts_knit$set(root.dir = 'C/Users/kloria/Documents/Davis_data_exploration/')
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\n \\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+
+```
+
+```{r, echo = F, message = F}
+### Packages
+#setwd("C/Users/kloria/Documents/Davis_data_exploration/")
+
+library(tidyverse)
+library(lubridate)
+library(dataRetrieval)
+library(viridis)
+library(cowplot)
+library(zoo)
+library(readxl)
+library(ggpubr)
+library(knitr)
+library(kableExtra)
+library(plotly)
+library(readxl)
+library(ggpmisc)
+
+site_colors <- c(
+  "Ophir" = "#7d5ba6",
+  "Winters" = "#4287f5",
+  "Winters upstream" = "#7fc5f0",
+  "Davis" = "#d9cb7c",
+  "Browns" = "#c94d00", 
+  "Browns sub"  = "#bd772d"
+)
+
+
+site_lab_colors <- c(
+  "ophir" = "#7d5ba6",
+    "ophir_hw" = "#7d1ba6",
+  "winters_usgs" = "#4287f5",
+  "winters_up" = "#7fc5f0",
+  "davis" = "#d9cb7c",
+  "browns" = "#c94d00", 
+  "browns_sub"  = "#bd772d",
+   "browns_hw"  = "#bd272d"
+)
+
+
+```
+
+
+```{r, eval=TRUE, echo = F, error=FALSE, warning=FALSE, message=FALSE}
+##### Function for water year:
+# fxn for water year
+water_year <- function(data) {
+  data %>%
+    mutate(date = ymd(date)) %>%
+    mutate(WaterYear = if_else(month(date) >= 10, year(date) + 1, year(date)))
+}
+```
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+# Chem data
+
+
+library(dplyr)
+library(stringr)
+
+UVvis_data <- read.csv(
+  "/Users/kellyloria/Documents/DRI/UVvis_Reno/processed_20260723.csv") %>%
+  mutate(date = as.Date(sample_date, format = "%Y-%m-%d"))
+
+water_chem <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_only_chem_dat_processed.csv") %>%
+    mutate(date = as.Date(date, format = "%Y-%m-%d")) %>%
+    dplyr::select(-TSS)  
+  
+
+water_chem_TSS <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/TSS_data3.csv") %>%
+    mutate(date = as.Date(Collection_date, format = "%m/%d/%y")) %>%
+  dplyr::select(site,date, TSS.mgL.2)  
+
+UVvis_data <- UVvis_data %>%
+  distinct()
+
+water_chem_TSS <- water_chem_TSS %>%
+  distinct()
+
+
+merged_df1 <- water_chem %>%
+  left_join(UVvis_data, by = c("date", "site_lab" = "site")) %>%
+  mutate(
+  burn_lab = case_when(
+      USGS_gage %in% c(
+        "browns",
+        "winters",
+        "davis"
+      ) ~ "burned",
+
+      USGS_gage %in% c(
+        "ophir"
+      ) ~ "unburned",
+
+      TRUE ~ NA_character_
+    ))
+
+merged_df2 <- merged_df1 %>%
+  left_join(water_chem_TSS, by = c("date", "site_lab" = "site"))
+
+names(davis_data)
+str(davis_data)
+```
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+
+merged_calcs <- merged_df2%>%
+  mutate(
+    Sr = ss_275_295/ss_350_400,
+    SUVA_254 = a_254/DOC_QC,
+    SCDOM = cdom/DOC_QC)
+
+## pause odd duplicates
+merged_calcs <- merged_calcs %>%
+  distinct()
+
+
+library(dplyr)
+library(purrr)
+
+merged_calcs <- merged_calcs %>%
+  group_by(site, datetime) %>%
+  summarise(
+    across(
+      everything(),
+      ~ reduce(.x, coalesce)
+    ),
+    .groups = "drop"
+  )
+
+### WRITE 
+## Save data
+# write.csv(merged_calcs, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_report.csv", row.names = FALSE)
+
+
+small_df <- merged_calcs%>%
+  dplyr::select(site_lab, burn_lab, date,DOC_QC,BC_QC, a_254, e2_e3, cdom, ss_275_295, ss_350_400, slope_ratio, Sr, SUVA_254, SCDOM)%>%
+  na.omit(small_df)
+
+```
+
+
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=11, fig.height=3}
+
+library(ggplot2)
+
+p1 <- small_df %>%
+  ggplot(aes(x = BC_QC,
+             y = SUVA_254)) +
+  geom_point(
+    aes(color = site_lab, shape = burn_lab),
+    alpha = 0.8,
+    size = 2,
+    position = position_jitter(width = 0.1)
+  ) +
+  scale_fill_viridis_d(option = "D", end = 0.9) +
+  scale_color_viridis_d(option = "D", end = 0.9) +
+  #labs(
+   # y = expression("Algal biomass (g cm"^{-2}*")"),
+   # x = NULL
+  #) +
+   
+  # Site colors + clean legend labels
+  scale_color_manual(
+    values = site_lab_colors,
+    labels = function(x) str_replace_all(x, "_", " ")
+  ) +
+  
+  # Clean burn-status labels
+  scale_shape_discrete(
+    labels = function(x) str_replace_all(x, "_", " ")
+  ) +
+  
+  # labs(
+  #   y = expression("Algal biomass (g cm"^{-2}*")"),
+  #   x = NULL,
+  #   color = "Site",
+  #   shape = "Burn status"
+  # ) +
+
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal"
+  ) + theme_minimal()
+  
+p1
+
+```
+
+
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=11, fig.height=3}
+
+library(ggplot2)
+
+p1 <- small_df %>%
+   ggplot(
+    aes(
+      x = date,
+      y = cdom,
+      color = site_lab,
+      group = site_lab,
+      shape = burn_lab
+    )
+  ) +
+  geom_line(alpha=0.8) +
+  geom_point(size = 3, alpha=0.8) +
+  
+  # Site colors + clean legend labels
+  scale_color_manual(
+    values = site_lab_colors,
+    labels = function(x) str_replace_all(x, "_", " ")
+  ) +
+  
+  # Clean burn-status labels
+  scale_shape_discrete(
+    labels = function(x) str_replace_all(x, "_", " ")
+  ) +
+  
+  labs(
+    y = expression("CDOM"),
+    x = NULL,
+    color = "Site",
+    shape = "Burn status"
+  ) +
+  
+  scale_x_date(
+    limits = c(as.Date("2024-11-01"), as.Date("2026-04-15")),
+    date_breaks = "2 month",
+    date_labels = "%b-%y"
+  ) +
+  
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal"
+  )
+
+p1
+  
+```
+
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+# ggsave(plot = p1, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/CDOM_report.png",sep=""),width=7.25,height=3,dpi=300)
+```
+
+
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=11, fig.height=3}
+
+library(ggplot2)
+
+p2 <- small_df %>%
+   ggplot(
+    aes(
+      x = date,
+      y = SUVA_254,
+      color = site_lab,
+      group = site_lab,
+      shape = burn_lab
+    )
+  ) +
+  geom_line(alpha=0.8) +
+  geom_point(size = 3, alpha=0.8) +
+  
+  # Site colors + clean legend labels
+  scale_color_manual(
+    values = site_lab_colors,
+    labels = function(x) str_replace_all(x, "_", " ")
+  ) +
+  
+  # Clean burn-status labels
+  scale_shape_discrete(
+    labels = function(x) str_replace_all(x, "_", " ")
+  ) +
+  
+  labs(
+    y = expression("SUVA"[254]),
+    x = NULL,
+    color = "Site",
+    shape = "Burn status"
+  ) +
+  
+  scale_x_date(
+    limits = c(as.Date("2024-11-01"), as.Date("2026-04-15")),
+    date_breaks = "2 month",
+    date_labels = "%b-%y"
+  ) +
+  
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal"
+  )
+
+p2
+  
+```
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+# ggsave(plot = p2, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/SUVA254_report.png",sep=""),width=7.25,height=3,dpi=300)
+```
+
+
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=11, fig.height=3}
+
+library(ggplot2)
+
+p3 <- small_df %>%
+   ggplot(
+    aes(
+      x = date,
+      y = BC_QC,
+      color = site_lab,
+      group = site_lab,
+      shape = burn_lab
+    )
+  ) +
+  geom_line(alpha=0.8) +
+  geom_point(size = 3, alpha=0.8) +
+  
+  # Site colors + clean legend labels
+  scale_color_manual(
+    values = site_lab_colors,
+    labels = function(x) str_replace_all(x, "_", " ")
+  ) +
+  
+  # Clean burn-status labels
+  scale_shape_discrete(
+    labels = function(x) str_replace_all(x, "_", " ")
+  ) +
+  
+  labs(
+    y = expression("rBC"),
+    x = NULL,
+    color = "Site",
+    shape = "Burn status"
+  ) +
+  
+  scale_x_date(
+    limits = c(as.Date("2024-11-01"), as.Date("2026-04-15")),
+    date_breaks = "2 month",
+    date_labels = "%b-%y"
+  ) +
+  
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal"
+  )
+
+p3
+  
+```
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+# ggsave(plot = p3, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/BC_report.png",sep=""),width=7.25,height=3,dpi=300)
+```
+
+
+
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=11, fig.height=3}
+
+library(ggplot2)
+
+p1 <- small_df %>%
+  ggplot(aes(x = date,
+             y = slope_ratio)) +
+  geom_point(
+    aes(color = site_lab),
+    alpha = 0.8,
+    size = 2,
+    position = position_jitter(width = 0.1),
+    shape = 19
+  ) +
+  scale_fill_viridis_d(option = "D", end = 0.9) +
+  scale_color_viridis_d(option = "D", end = 0.9) +
+ # labs(
+   # y = expression("Algal biomass (g cm"^{-2}*")"),
+  #  x = NULL
+  #) +
+  guides(shape = "none") +
+  theme_minimal()
+
+p1
+
+```
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+
+
+davis_dat <- davis_data %>%
+  group_by(site_lab, date) %>%
+  summarise(
+    mean_bm_gcm2 = mean(AFDM.g.cm..2, na.rm = TRUE),
+    sd_bm = sd(AFDM.g.cm..2, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+```
+
+
+### Mean and standard deviation of agal biomass on rocks each reach per visit. 
+
+August to October 2025
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=8, fig.height=3}
+
+# Plot means ± SD
+p2 <- davis_dat %>%
+  ggplot(aes(x = date, y = mean_bm_gcm2, color = site_lab, group = site_lab)) +
+  geom_point(size = 3) +
+  geom_line() +
+  geom_errorbar(
+    aes(ymin = mean_bm_gcm2 - sd_bm, ymax = mean_bm_gcm2 + sd_bm),
+    width = 0.1,
+    position = position_dodge(width = 0.2)
+  ) +
+  scale_fill_viridis_d(option = "D", end = 0.9) +
+  scale_color_viridis_d(option = "D", end = 0.9) +
+  #scale_color_manual(values = site_lab_colors) +
+  labs(
+    y ="Algal biomass (g cm^-2)",
+    x = NULL) +
+  theme_minimal()
+
+p2
+
+```
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+# write.csv(davis_dat, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/Algal_biomass_QAQC.csv")
+```
+
+
+End script.
+
+
+```{r, eval=TRUE, echo = F, error=FALSE, warning=FALSE, message=FALSE}
+##### Function for water year:
+# fxn for water year
+water_year <- function(data) {
+  data %>%
+    mutate(date = ymd(date)) %>%
+    mutate(WaterYear = if_else(month(date) >= 10, year(date) + 1, year(date)))
+}
+```
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+# Chem data
+
+
+library(dplyr)
+library(stringr)
+
+davis_data_wc <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_only_chem_dat_processed.csv"
+) %>%
+  mutate(
+    date = as.Date(date, format = "%Y-%m-%d"))
+
+names(davis_data)
+str(davis_data_wc)
+
+
+biomass_dat <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/Algal_biomass_report.csv")%>%
+  mutate(
+    date = as.Date(date, format = "%Y-%m-%d"))
+
+small_df_2 <- small_df%>%
+  left_join(biomass_dat, by= c("site_lab", "date", "burn_lab"))
+
+```
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=8, fig.height=3}
+
+# Plot means ± SD
+p3 <- small_df_2 %>%
+  ggplot(aes(y = cdom, x = mean_bm_gcm2, color = site_lab, group = site_lab, shape = burn_lab)) +
+  geom_point(size = 3) +
+  scale_color_manual(values = site_lab_colors) +
+    labs(
+    x= expression("Algal biomass (g cm"^{-2}*")"),
+    x = "cdom",
+    color = "Site",
+    shape = "Burn status"
+  ) +
+    # Site colors + clean legend labels
+  scale_color_manual(
+    values = site_lab_colors,
+    labels = function(x) str_replace_all(x, "_", " ")
+  ) +
+  
+  # Clean burn-status labels
+  scale_shape_discrete(
+    labels = function(x) str_replace_all(x, "_", " ")
+  ) +
+  theme_minimal()
+
+p3
+
+
+# Plot means ± SD
+p4 <- small_df_2 %>%
+  ggplot(aes(y = SUVA_254, x = mean_bm_gcm2, color = site_lab, group = site_lab, shape = burn_lab)) +
+  geom_point(size = 3) +
+  scale_color_manual(values = site_lab_colors) +
+    labs(
+    x= expression("Algal biomass (g cm"^{-2}*")"),
+     y = expression("SUVA"[254]),
+    color = "Site",
+    shape = "Burn status"
+  ) +
+  geom_hline(yintercept=4, color="grey50")+
+    # Site colors + clean legend labels
+  scale_color_manual(
+    values = site_lab_colors,
+    labels = function(x) str_replace_all(x, "_", " ")
+  ) +
+  
+  # Clean burn-status labels
+  scale_shape_discrete(
+    labels = function(x) str_replace_all(x, "_", " ")
+  ) +
+  theme_minimal()
+
+p4
+
+
+library(patchwork)
+
+# Combine plots: 2 rows, 1 column
+p_grid <- p3 / p4 +
+  plot_layout(ncol = 1, guides = "collect") &
+  theme(
+    legend.position = "bottom"
+  )
+
+p_grid
+
+# Save figure
+ggsave(
+  filename = "algal_biomass_DOM_grid.png",
+  plot = p_grid,
+  width = 4,
+  height = 6,
+  units = "in",
+  dpi = 300
+)
+```
+
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=8, fig.height=3}
+
+# Plot means ± SD
+p3 <- davis_data_wc %>%
+  ggplot(aes(x = date, y = BC_QC, color = site_lab, group = site_lab)) +
+  geom_point(size = 3) +
+  geom_line() +
+  scale_fill_viridis_d(option = "D", end = 0.9) +
+  scale_color_viridis_d(option = "D", end = 0.9) +
+  #scale_color_manual(values = site_lab_colors) +
+  labs(
+    y ="BC (g cm^-2)",
+    x = NULL) +
+  theme_minimal()
+
+p3
+
+```
+
+

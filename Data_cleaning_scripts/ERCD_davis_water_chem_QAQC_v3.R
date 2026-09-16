@@ -30,7 +30,7 @@ library(data.table)
 
 
 # Chem data
-davis_data <- read_excel("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/davis_data_water_chem_2603.xlsx") 
+davis_data <- read_excel("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/davis_data_water_chem_2606.xlsx") 
 #View(davis_data)
 str(davis_data)
 
@@ -210,8 +210,7 @@ davis_df2 <- davis_df2 %>%
       TRUE ~ BC_num
     )
   ) %>%
-  dplyr::select(-BC_num)  # remove helper column if desired
-
+  dplyr::select(-BC_num)  
 
 str(davis_df2)
 
@@ -255,7 +254,7 @@ davis_df <- davis_df2%>%
 
 ## Step 3: ##
 ### use YSI data to fill in missing GPS
-ysi_dat <- read_csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ysi_WQ_QAQC_daily1.csv")
+ysi_dat <- read_csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ysi_WQ_QAQC_daily.csv")
 
 ysi_dat <- ysi_dat %>%
    dplyr::select(site_lab, date, ends_with("_mean")) %>%
@@ -1183,4 +1182,4 @@ merged_df1 <- merged_dff %>%
 # write.csv(merged_df, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_only_chem_dat_processed.csv", row.names = FALSE)
 
 
-# write.csv(merged_df1, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_only_chem_dat_CQ1.csv", row.names = FALSE)
+# write.csv(merged_dff, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_only_chem_dat_CQ1.csv", row.names = FALSE)

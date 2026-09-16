@@ -88,39 +88,124 @@ water_year <- function(data) {
 
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
 # Chem data
-davis_data <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/Davis_Rock_Scrape_Biomass1.csv") %>% mutate(date = as.Date(date, format = c("%m/%d/%Y"))) %>%
-    mutate(site_lab = case_when(
-    Site== "Davis" ~ "davis", 
-    Site == "Ophir " ~ "ophir",
-    Site == "Ophir HW" ~ "ophir_hw",
-    Site == "Winters" ~ "winters_usgs",
-    Site == "Winters USGS" ~ "winters_usgs",
-    Site == "Winters up" ~ "winters_up",
-    Site == "Browns" ~ "browns", 
-    Site == "Browns HW" ~ "browns_hw",
-    Site == "Browns sub" ~ "browns_sub",
-    Site == "Browns Sub" ~ "browns_sub")) %>%  filter(date<=as.Date("2025-11-19"))
+
+
+library(dplyr)
+library(stringr)
+
+library(dplyr)
+library(stringr)
+
+davis_data <- read.csv(
+  "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/Davis Rock Scrape Biomass.csv"
+) %>%
+  mutate(
+    date = as.Date(date, format = "%m/%d/%y"),
+
+    # Standardize spacing and capitalization
+    Site_clean = Site %>%
+      str_squish() %>%
+      str_to_lower(),
+
+    # Standardized site names
+    site_lab = case_when(
+      Site_clean == "davis"        ~ "davis",
+      Site_clean == "ophir"        ~ "ophir",
+      Site_clean == "ophir hw"     ~ "ophir_hw",
+      Site_clean == "winters"      ~ "winters_usgs",
+      Site_clean == "winters usgs" ~ "winters_usgs",
+      Site_clean == "winters up"   ~ "winters_up",
+      Site_clean == "browns"       ~ "browns",
+      Site_clean == "browns hw"    ~ "browns_hw",
+      Site_clean == "browns sub"   ~ "browns_sub",
+      Site_clean == "mcgee"        ~ "mcgee_creek",
+      Site_clean == "mcgee creek"  ~ "mcgee_creek",
+      Site_clean == "mcgee park"   ~ "mcgee_park",
+      Site_clean == "mcgee hw"     ~ "mcgee_hw",
+      Site_clean == "mcgee 395"    ~ "mcgee_395",
+      Site_clean == "hilton"       ~ "hilton",
+      Site_clean == "hilton lower" ~ "hilton_lower",
+      TRUE                         ~ NA_character_
+    ),
+
+    # Study location
+    loc_lab = case_when(
+      site_lab %in% c(
+        "davis",
+        "browns",
+        "browns_hw",
+        "browns_sub",
+        "ophir",
+        "ophir_hw",
+        "winters_usgs",
+        "winters_up"
+      ) ~ "davis",
+
+      site_lab %in% c(
+        "hilton",
+        "hilton_lower",
+        "mcgee_395",
+        "mcgee_creek",
+        "mcgee_hw",
+        "mcgee_park"
+      ) ~ "pack",
+
+      TRUE ~ NA_character_
+    ),
+
+    # Burn status
+    burn_lab = case_when(
+      site_lab %in% c(
+        "browns",
+        "browns_hw",
+        "browns_sub",
+        "mcgee_395",
+        "mcgee_creek",
+        "winters_usgs",
+        "winters_up"
+      ) ~ "burned",
+
+      site_lab %in% c(
+        "hilton",
+        "hilton_lower",
+        "mcgee_hw",
+        "ophir",
+        "ophir_hw"
+      ) ~ "unburned",
+
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  select(-Site_clean)
 
 names(davis_data)
 str(davis_data)
+
 ```
 
 ### Collective site algal biomass 
 
-```{r, warning=F, size = 'small', echo=FALSE, fig.width=8, fig.height=3}
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=11, fig.height=3}
+
+library(ggplot2)
 
 p1 <- davis_data %>%
   ggplot(aes(x = site_lab,
              y = AFDM.g.cm..2)) +
-  geom_boxplot(aes(fill=site_lab), alpha = 0.75) +
+  geom_boxplot(aes(fill = site_lab), alpha = 0.75) +
   geom_point(
-    alpha = 0.8, size = 2, 
     aes(color = site_lab),
-    position = position_jitter(width = 0.1),  
-    shape = 19) +
-  scale_fill_manual(values = site_lab_colors) +
-  scale_color_manual(values = site_lab_colors) +
-  labs(y = "Algal biomass (g cm^-2)", x = NULL) +
+    alpha = 0.8,
+    size = 2,
+    position = position_jitter(width = 0.1),
+    shape = 19
+  ) +
+  scale_fill_viridis_d(option = "D", end = 0.9) +
+  scale_color_viridis_d(option = "D", end = 0.9) +
+  labs(
+    y = expression("Algal biomass (g cm"^{-2}*")"),
+    x = NULL
+  ) +
   guides(shape = "none") +
   theme_minimal()
 
@@ -132,14 +217,15 @@ p1
 
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
 
-
 davis_dat <- davis_data %>%
-  group_by(site_lab, date) %>%
+  group_by(site_lab, loc_lab, burn_lab, date) %>%
   summarise(
-    mean_bm_gcm2 = mean(AFDM.g.cm..2, na.rm = TRUE),
-    sd_bm = sd(AFDM.g.cm..2, na.rm = TRUE),
+    n = sum(!is.na(AFDM.g.cm..2)),
+    mean_bm_gcm2 = round(mean(AFDM.g.cm..2, na.rm = TRUE), 4),
+    se_bm = round(sd(AFDM.g.cm..2, na.rm = TRUE) / sqrt(n), 4),
     .groups = "drop"
   )
+
 
 ```
 
@@ -152,12 +238,39 @@ August to October 2025
 
 # Plot means ± SD
 p2 <- davis_dat %>%
-  filter(!(site_lab== "browns_hw"| site_lab== "ophir_hw"))%>% 
   ggplot(aes(x = date, y = mean_bm_gcm2, color = site_lab, group = site_lab)) +
   geom_point(size = 3) +
   geom_line() +
   geom_errorbar(
-    aes(ymin = mean_bm_gcm2 - sd_bm, ymax = mean_bm_gcm2 + sd_bm),
+    aes(ymin = mean_bm_gcm2 - se_bm, ymax = mean_bm_gcm2 + se_bm),
+    width = 0.1,
+    position = position_dodge(width = 0.2)
+  ) +
+  scale_fill_viridis_d(option = "D", end = 0.9) +
+  scale_color_viridis_d(option = "D", end = 0.9) +
+  #scale_color_manual(values = site_lab_colors) +
+  labs(
+    y ="Algal biomass (g cm^-2)",
+    x = NULL) +
+  theme_minimal() +
+   facet_grid(loc_lab ~.)
+
+p2
+
+```
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=8, fig.height=3}
+
+# Plot means ± SD
+p2 <- davis_dat %>%
+  filter(loc_lab=="davis",!site_lab %in% c("ophir_hw", "browns_hw", "winters_usgs"))%>%
+  ggplot(aes(x = date, y = mean_bm_gcm2, color = site_lab, group = site_lab, shape = burn_lab)) +
+  geom_point(size = 3) +
+  geom_line() +
+  geom_errorbar(
+    aes(ymin = mean_bm_gcm2 - se_bm, ymax = mean_bm_gcm2 + se_bm),
     width = 0.1,
     position = position_dodge(width = 0.2)
   ) +
@@ -165,16 +278,84 @@ p2 <- davis_dat %>%
   labs(
     y ="Algal biomass (g cm^-2)",
     x = NULL) +
-  theme_minimal()
+        scale_x_date(limits = c(as.Date("2025-08-01"), as.Date("2026-05-25")),
+        date_breaks = "2 month", date_labels = "%b-%y") +
+  theme_minimal() 
 
 p2
+
+
+p3 <- davis_dat %>%
+  filter(
+    loc_lab == "davis",
+    !site_lab %in% c("ophir_hw", "browns_hw", "winters_usgs")
+  ) %>%
+  ggplot(
+    aes(
+      x = date,
+      y = mean_bm_gcm2,
+      color = site_lab,
+      group = site_lab,
+      shape = burn_lab
+    )
+  ) +
+  geom_line(alpha=0.8) +
+  geom_errorbar(
+    aes(
+      ymin = mean_bm_gcm2 - se_bm,
+      ymax = mean_bm_gcm2 + se_bm
+    ),
+    alpha=0.8,
+    width = 0.1,
+    position = position_dodge(width = 0.2)
+  ) +
+  geom_point(size = 3, alpha=0.8) +
+  
+  # Site colors + clean legend labels
+  scale_color_manual(
+    values = site_lab_colors,
+    labels = function(x) str_replace_all(x, "_", " ")
+  ) +
+  
+  # Clean burn-status labels
+  scale_shape_discrete(
+    labels = function(x) str_replace_all(x, "_", " ")
+  ) +
+  
+  labs(
+    y = expression("Algal biomass (g cm"^{-2}*")"),
+    x = NULL,
+    color = "Site",
+    shape = "Burn status"
+  ) +
+  
+  scale_x_date(
+    limits = c(as.Date("2025-08-15"), as.Date("2026-05-15")),
+    date_breaks = "1 month",
+    date_labels = "%b-%y"
+  ) +
+  
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal"
+  )
+
+p3
 
 ```
 
 
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
-# write.csv(davis_dat, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/Algal_biomass_QAQC.csv")
+# ggsave(plot = p3, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/Algal_biomass_report.png",sep=""),width=7.25,height=2.5,dpi=300)
 ```
+
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+# write.csv(davis_dat, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/Algal_biomass_report.csv")
+```
+
 
 
 End script.

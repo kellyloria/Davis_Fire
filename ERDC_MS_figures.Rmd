@@ -254,7 +254,7 @@ event_summary
 
 ### Runoff and sampling timing as streamflow, sample dates, and ppt 
 
-```{r, warning=F, size = 'small', echo=F, fig.width=9, fig.height=10.25}
+```{r, warning=F, size = 'small', echo=F, include=FALSE, fig.width=9, fig.height=10.25}
 
 library(dplyr)
 library(ggplot2)
@@ -415,7 +415,6 @@ Baseflowplot <- local({
           expand = c(0, 0)) 
 })
 
-Baseflowplot
 
 ```
 
@@ -428,7 +427,7 @@ Baseflowplot
 library(dplyr)
 library(ggplot2)
 
-hydro_labeled <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/Davis_MS_fxnflow_hydro_labeled.csv") %>%
+hydro_labeled <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Dryad_data/Davis_MS_fxnflow.csv") %>%
   mutate(date = as.Date(date))
 
 

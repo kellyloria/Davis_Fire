@@ -88,20 +88,79 @@ water_year <- function(data) {
 
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
 # 
-davis_data <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/YSI_KOR_dat_20251210_processed.csv") %>% 
-  mutate(datetime = round_date(as.POSIXct(datetime, format="%Y-%m-%d %H:%M:%S"), unit="5 minutes"),
-         date = as.Date(datetime)) %>%
-    mutate(site_lab = case_when(
-    stream == "davis" ~ "davis", 
-    stream ==  "ophir creek" ~ "ophir",
-    stream ==  "winters creek" ~ "winters_usgs",
-    stream == "wc usgs gage" ~ "winters_usgs",
-    stream ==  "winters up" ~ "winters_up",
-    stream == "browns creek" ~ "browns", 
-    stream == "browns creek sub" ~ "browns_sub")) 
+# davis_data <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/YSI_KOR_dat_20260630_processed.csv") %>% 
+#   mutate(datetime = round_date(as.POSIXct(datetime, format="%Y-%m-%d %H:%M:%S"), unit="5 minutes"),
+#          date = as.Date(datetime)) %>%
+#     mutate(site_lab = case_when(
+#     stream == "davis" ~ "davis", 
+#     stream ==  "ophir creek" ~ "ophir",
+#     stream ==  "ophir" ~ "ophir",
+#     stream ==  "winters creek" ~ "winters_usgs",
+#     stream == "wc usgs gage" ~ "winters_usgs",
+#     stream == "wintersusgs" ~ "winters_usgs",
+#     stream ==  "winters up" ~ "winters_up",
+#     stream ==  "wintersup" ~ "winters_up",
+#     stream == "browns creek" ~ "browns", 
+#     stream == "browns" ~ "browns", 
+#     stream == "browns sub" ~ "browns_sub",
+#     stream == "browns creek sub" ~ "browns_sub")) 
+
+
+
+library(dplyr)
+library(lubridate)
+library(stringr)
+
+davis_data <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/YSI_KOR_dat_20260630_processed.csv") %>%
+  mutate(
+    datetime = round_date(as.POSIXct(datetime,
+                                     format = "%Y-%m-%d %H:%M:%S"),
+                          unit = "5 minutes"),
+    date = as.Date(datetime),
+    stream = str_trim(str_to_lower(stream)),
+    site_lab = case_when(
+      # Davis
+      stream == "davis" ~ "davis",
+
+      # Ophir
+      stream %in% c("ophir", "ophir creek") ~ "ophir",
+
+      # Ophir headwaters
+      stream %in% c("ophirhw", "ophir hw") ~ "ophir_hw",
+
+      # Ophir ditch (if this is the CSSL location)
+      stream %in% c("ophirditch", "pack", "cssl") ~ "ophir_ditch",
+
+      # Winters USGS
+      stream %in% c("winters creek",
+                    "wc usgs gage",
+                    "wintersusgs") ~ "winters_usgs",
+
+      # Winters upstream
+      stream %in% c("winters up",
+                    "wintersup") ~ "winters_up",
+
+      # Browns
+      stream %in% c("browns creek",
+                    "browns") ~ "browns",
+
+      # Browns sub
+      stream %in% c("browns creek sub",
+                    "browns sub") ~ "browns_sub",
+
+      # Browns headwaters
+      stream %in% c("brownshw", "browns hw") ~ "browns_hw",
+
+      TRUE ~ NA_character_
+    )
+  )
+
+unique(davis_data$site_lab)
+
 
 names(davis_data)
 str(davis_data)
+unique(davis_data$site_lab)
 ```
 
 ### Check long:
