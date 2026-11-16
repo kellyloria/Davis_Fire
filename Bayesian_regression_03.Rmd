@@ -4,25 +4,23 @@ subtitle: "Bayesian regression with observed discharge and antecedent precipitat
 author: "Kelly A. Loria"
 date: "`r Sys.Date()`"
 output:
-  html_document:
-    toc: true
-    toc_float: true
-    code_folding: show
   github_document:
     toc: true
+    toc_depth: 3
+    html_preview: false
 params:
-  chemistry_csv: "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Dryad_data/DFMS_water_quality_data_2026.csv"
+  chemistry_csv: "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/DFMS_water_quality_data_2026.csv"
   hydro_csv: "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Dryad_data/DFMS_hydro_clim_WY2024_2026.csv"
   output_dir: "outputs/bayes"
-  qc_substitution_factor: 0.5   # QC value of a flagged result is assumed to be DL/2; limit = QC / factor
-  assume_quantified: "TSS"      # analytes with no *_DL_lab column that are treated as quantified
-  burned_only: TRUE             # TRUE = drop ophir (only unburned site); FALSE = all six sites
-  use_discharge: TRUE           # TRUE = discharge + precipitation; FALSE = precipitation only
+  qc_substitution_factor: 0.5
+  assume_quantified: "TSS"
+  burned_only: true
+  use_discharge: true
   min_n: 18
   chains: 4
-  iter: 2000                    # 1,000 warmup + 1,000 sampling per chain
+  iter: 2000
   adapt_delta: 0.97
-  cri: 0.95                     # credible-interval level reported everywhere
+  cri: 0.95
 ---
 
 ## Left-censored lognormal models with observed discharge and antecedent precipitation
