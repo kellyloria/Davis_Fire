@@ -6,14 +6,14 @@
 ## Manuscript analyses
 
 ### 01. Hydroclimate and water quality
-[Hydro_clim_context_01.Rmd](Hydro_clim_context_01.Rmd)
+[Hydro_clim_context_01.md](Hydro_clim_context_01.md)
 
 - Characterizes seasonal flow regimes, precipitation events, and water quality sampling (Figures 2–4).
 - Evaluates differences in solute concentrations among streams and sampling locations using ANOVA.
 - Generates summary statistics and supporting water chemistry tables.
 
 ### 02. Double mass curve analysis
-[DMC_residual_panels_02.Rmd](DMC_residual_panels_02.Rmd)
+[DMC_residual_panels_02.md](DMC_residual_panels_02.md)
 
 - Estimates cumulative water volumes and solute loads for Winters USGS and Ophir Creek.
 - Uses double mass curves (DMCs) to characterize post-fire solute transport dynamics (Figures 5–6).
