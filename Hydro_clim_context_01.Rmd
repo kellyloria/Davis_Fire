@@ -144,7 +144,7 @@ water_year <- function(data) {
 ```{r load-water-quality}
 # Water quality observations
 WC_dat <- read.csv(
-  file.path(data_dir, "DF_water_quality_data_2026.csv")
+  file.path(data_dir, "DFMS_water_quality_data_2026.csv")
 ) %>%
   mutate(
     datetime = ymd_hms(datetime, tz = "UTC"),
@@ -170,7 +170,7 @@ WC_dat <- read.csv(
 ```{r load-hydroclimate}
 # Daily discharge and precipitation observations
 df_hydro <- read.csv(
-  file.path(data_dir, "hydro_clim_WY2024_2026.csv")
+  file.path(data_dir, "DFMS_hydro_clim_WY2024_2026.csv")
 ) %>%
   mutate(
     date = as.Date(date, format = "%Y-%m-%d")

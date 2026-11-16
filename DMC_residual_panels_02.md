@@ -22,7 +22,7 @@ K. Loria
 
 ``` r
 WC_dat <- read.csv(
-  file.path(data_dir, "DF_water_quality_data_2026.csv")
+  file.path(data_dir, "DFMS_water_quality_data_2026.csv")
 ) %>%
   mutate(
     datetime = ymd_hms(datetime, tz = "UTC"),
@@ -66,14 +66,6 @@ loads. A chemistry value with a missing discharge day in its interval is
 series after such a gap and does not silently sum across missing
 intervals. The analysis uses one common observation window for both
 sites and each analyte’s available chemistry observations.
-
-Normalized cumulative load versus normalized cumulative water volume is
-fitted with a regression through the origin. The fitted slope is a
-descriptive summary of DMC curvature, **not** a direct
-concentration–discharge exponent or an independent-observation
-significance test. Because cumulative observations are serially
-dependent and both normalized series end near (1,1), inferential
-p-values and CIs from ordinary `lm` are exploratory only.
 
 ## 2. Chemistry analytes and units
 
@@ -128,7 +120,7 @@ analytes <- analytes %>%
 ``` r
 # Daily discharge and precipitation observations
 df_hydro <- read.csv(
-  file.path(data_dir, "hydro_clim_WY2024_2026.csv")
+  file.path(data_dir, "DFMS_hydro_clim_WY2024_2026.csv")
 ) %>%
   mutate(
     date = as.Date(date, format = "%Y-%m-%d")
@@ -1010,85 +1002,6 @@ plot_dmc("Zn")
 <img src="DMC_residual_panels_02_files/figure-gfm/residuals-23.png" alt="" width="80%" />
 
 ## 9. Export results (optional)
-
-``` r
-# dir.create("dmc_outputs", showWarnings = FALSE)
-# write.csv(models_tbl, "dmc_outputs/dmc_slopes_winters_ophir.csv", row.names = FALSE)
-# write.csv(loads_all, "dmc_outputs/dmc_interval_qc_winters_ophir.csv", row.names = FALSE)
-# write.csv(dmc_long, "dmc_outputs/dmc_loads_winters_ophir.csv", row.names = FALSE)
-# ggsave("dmc_outputs/DMC_DOC.png", plot_dmc("DOC"), width = 9, height = 4, dpi = 300)
-```
-
-``` r
-DMC_grid <- ggarrange(
-  dmc_TSS_res_plt,
-  dmc_DOC_res_plt,
-  dmc_TOC_res_plt,
-  dmc_TND_res_plt,
-  dmc_NO3_res_plt,
-  dmc_PO4_res_plt,
-  dmc_Al_res_plt,
-  dmc_Ba_res_plt, 
-  dmc_Ca_res_plt,
-  dmc_Fe_res_plt,
-  dmc_Pb_res_plt,
-  dmc_Sr_res_plt,
-  common.legend = T,
-  ncol=2,
-  nrow=6)
-
-DMC_grid
-```
-
-<img src="DMC_residual_panels_02_files/figure-gfm/unnamed-chunk-1-1.png" alt="" width="80%" />
-
-``` r
-DMC_grid <- ggarrange(
-  dmc_TSS_plt,
-  dmc_DOC_plt,
- # dmc_TOC_plt,
-  dmc_TND_plt,
-  dmc_NO3_plt,
-  dmc_PO4_plt,
-  common.legend = T,
-  ncol=1,
-  nrow=5)
-
-ggsave(
-    filename = ("DMC_nitrients.png"),
-    plot = DMC_grid,
-    width = 11,
-    height = 14.5,
-    dpi = 300,
-    bg = "white"
-  )
-  
-  
-DMC_metal_grid <- ggarrange(
-  dmc_Al_plt,
-  dmc_Ba_plt, 
-  dmc_Fe_plt,
-  dmc_Pb_plt,
-  dmc_Sr_plt,
-  common.legend = T,
-  ncol=1,
-  nrow=5)
-
-DMC_metal_grid
-```
-
-<img src="DMC_residual_panels_02_files/figure-gfm/unnamed-chunk-2-1.png" alt="" width="80%" />
-
-``` r
-ggsave(
-    filename = ("DMC_metals.png"),
-    plot = DMC_metal_grid,
-    width = 11,
-    height = 14.5,
-    dpi = 300,
-    bg = "white"
-  )
-```
 
 ### Flow time series
 
