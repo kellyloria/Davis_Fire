@@ -238,55 +238,6 @@ p1
 
 ```{r, warning=F, size = 'small', echo=FALSE, fig.width=11, fig.height=8}
 
-# library(ggplot2)
-# 
-# p1 <- small_df %>%
-#    ggplot(
-#     aes(
-#       x = date,
-#       y = cdom,
-#       color = site_lab,
-#       group = site_lab,
-#       shape = burn_lab
-#     )
-#   ) +
-#   geom_line(alpha=0.8) +
-#   geom_point(size = 3, alpha=0.8) +
-#   
-#   # Site colors + clean legend labels
-#   scale_color_manual(
-#     values = site_lab_colors,
-#     labels = function(x) str_replace_all(x, "_", " ")
-#   ) +
-#   
-#   # Clean burn-status labels
-#   scale_shape_discrete(
-#     labels = function(x) str_replace_all(x, "_", " ")
-#   ) +
-#   
-#   labs(
-#     y = expression("CDOM"),
-#     x = NULL,
-#     color = "Site",
-#     shape = "Burn status"
-#   ) +
-#   
-#   scale_x_date(
-#     limits = c(as.Date("2024-11-01"), as.Date("2026-04-15")),
-#     date_breaks = "2 month",
-#     date_labels = "%b-%y"
-#   ) +
-#   
-#   theme_minimal() +
-#   theme(
-#     legend.position = "bottom",
-#     legend.box = "horizontal"
-#   )
-# 
-# p1
-
-
-
 p1 <- merged_calcs %>%
   filter(!is.na(cdom)) %>%
   mutate(
@@ -375,52 +326,6 @@ p1
 
 ```{r, warning=F, size = 'small', echo=FALSE, fig.width=11, fig.height=8}
 
-library(ggplot2)
-# 
-# p2 <- small_df %>%
-#    ggplot(
-#     aes(
-#       x = date,
-#       y = SUVA_254,
-#       color = site_lab,
-#       group = site_lab,
-#       shape = burn_lab
-#     )
-#   ) +
-#   geom_line(alpha=0.8) +
-#   geom_point(size = 3, alpha=0.8) +
-#   
-#   # Site colors + clean legend labels
-#   scale_color_manual(
-#     values = site_lab_colors,
-#     labels = function(x) str_replace_all(x, "_", " ")
-#   ) +
-#   
-#   # Clean burn-status labels
-#   scale_shape_discrete(
-#     labels = function(x) str_replace_all(x, "_", " ")
-#   ) +
-#   
-#   labs(
-#     y = expression("SUVA"[254]),
-#     x = NULL,
-#     color = "Site",
-#     shape = "Burn status"
-#   ) +
-#   
-#   scale_x_date(
-#     limits = c(as.Date("2024-11-01"), as.Date("2026-04-15")),
-#     date_breaks = "2 month",
-#     date_labels = "%b-%y"
-#   ) +
-#   
-#   theme_minimal() +
-#   theme(
-#     legend.position = "bottom",
-#     legend.box = "horizontal"
-#   )
-# 
-# p2
 
 
 p2 <- merged_calcs %>%

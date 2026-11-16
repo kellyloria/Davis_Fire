@@ -492,7 +492,7 @@ largest_runoff_events
 
 ```
 
-### Look at largest pp† events:
+### Look at largest ppt events:
 
 
 ```{r, warning=F, echo=FALSE, include=T}
