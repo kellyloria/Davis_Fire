@@ -21,7 +21,7 @@ glimpse(PRISMdata)
 ## Temp workflow from mac - 
 
 # Path to your folder containing CSVs
-folder_path <- "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/PRISM_aug_oct"
+folder_path <- "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/old_data/PRISM_aug_oct"
 
 # List all CSV files in the folder (and subfolders if needed)
 csv_files <- list.files(path = folder_path, pattern = "\\.csv$", full.names = TRUE, recursive = TRUE)
@@ -38,7 +38,7 @@ glimpse(PRISMdata)
 
 
 ## bring old and new 
-old_prism <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/prism_cat.csv")
+old_prism <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/old_data/prism_cat.csv")
 names(old_prism)
 
 new_prism <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/prism_cat_12_10.csv")%>%

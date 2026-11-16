@@ -1,0 +1,15 @@
+item,value
+scope,burned_only
+sites_in_models,"browns, davis, winters_usgs"
+predictors,Q_and_PPT
+likelihood,"lognormal, left-censored at sample-specific reporting limit"
+random_effect,"(1 | stream_date) when same-stream, same-date groups exist"
+priors,"b ~ Normal(0,1); sigma ~ Exponential(1); brms defaults otherwise"
+chains_x_iter,4 x 2000
+adapt_delta,0.97
+seed,2026
+interval,95%
+run_date,2026-11-16
+brms_version,2.23.0
+chemistry_csv,/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Dryad_data/DF_water_quality_data_2026.csv
+hydrology_csv,/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Dryad_data/hydro_clim_WY2024_2026.csv

@@ -1,0 +1,968 @@
+---
+title: "ERDC Davis Fire MS"
+subtitle: "Figures 5–6: Double mass curves: Winters USGS and Ophir"
+author: "K. Loria"
+date: "`r Sys.Date()`"
+output:
+  github_document:
+    toc: true
+    toc_depth: 3
+    html_preview: false
+always_allow_html: true
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+
+# 1. R Markdown settings
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  error = FALSE,
+  fig.width = 7,
+  fig.height = 3,
+  fig.retina = 2,
+  out.width = "80%",
+  dpi = 300
+)
+
+
+# 2. Package dependencies
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggpubr)
+library(lubridate)
+library(purrr)
+library(broom)
+library(tibble)
+library(scales)
+library(ggnewscale)
+library(here)
+
+# 3. Relative directory paths
+data_dir <- here::here("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Dryad_data")
+
+# Check that required input files exist
+stopifnot(
+  file.exists(file.path(data_dir, "DFMS_water_quality_data_2026.csv")),
+  file.exists(file.path(data_dir, "DFMS_hydro_clim_WY2024_2026.csv"))
+)
+
+# Local time zone
+local_tz <- "America/Los_Angeles"
+```
+
+
+
+
+## 1. Libraries and input checks
+
+```{r wc_dat, message=FALSE, warning=FALSE}
+WC_dat <- read.csv(
+  file.path(data_dir, "DF_water_quality_data_2026.csv")
+) %>%
+  mutate(
+    datetime = ymd_hms(datetime, tz = "UTC"),
+    datetime = with_tz(datetime, tzone = local_tz),
+    date = as.Date(datetime, tz = local_tz),
+    year = year(datetime),
+    mon = month(datetime),
+    jday = yday(datetime),
+    burn_lab = case_when(
+      site_lab == "ophir" ~ "unburned",
+      site_lab %in% c(
+        "davis",
+        "winters_usgs",
+        "winters_up",
+        "browns",
+        "browns_sub"
+      ) ~ "burn",
+      TRUE ~ NA_character_
+    )
+  )
+
+# Sites used throughout the DMC workflow
+sites_keep <- c("winters_usgs", "ophir")
+site_labels <- c(winters_usgs = "Winters USGS", ophir = "Ophir")
+
+# Set start and end deliberately: these dates define the cumulative-volume baseline.
+analysis_start <- as.Date("2024-10-15")
+analysis_end   <- as.Date("2026-05-14")
+fire_date      <- as.Date("2024-09-25")  # containment date; used for plot color
+
+# Set FALSE to exclude below-detection-limit substituted concentrations.
+include_bdl <- TRUE
+```
+
+
+For each chemistry sample, the measured concentration is assumed representative of the water volume **since the preceding chemistry sample** (the first sample represents the period since the analysis start date). Interval loads are estimates, not measured continuous loads. A chemistry value with a missing discharge day in its interval is **not** assigned a load; the default analysis starts a new complete series after such a gap and does not silently sum across missing intervals. The analysis uses one common observation window for both sites and each analyte's available chemistry observations.
+
+Normalized cumulative load versus normalized cumulative water volume is fitted with a regression through the origin. The fitted slope is a descriptive summary of DMC curvature, **not** a direct concentration–discharge exponent or an independent-observation significance test. Because cumulative observations are serially dependent and both normalized series end near (1,1), inferential p-values and CIs from ordinary `lm` are exploratory only.
+
+
+## 2. Chemistry analytes and units
+
+The original script used `TSS`, but the updated object has `TSS_QC`. The source's `togL` values were mislabeled as g/L conversions; here everything is converted explicitly to **mg/L**, then mg/L × liters / 1000 gives grams.
+
+```{r analytes}
+## Analyte definitions and unit conversions
+analytes <- tribble(
+  ~analyte, ~col,       ~unit,  ~to_mg_L,
+  "DOC",    "DOC_QC",    "mg/L", 1,
+  "TOC",    "TOC_QC",    "mg/L", 1,
+  "TDN",    "TDN_QC",    "mg/L", 1,
+  "PO4_P",  "PO4.P_QC",  "mg/L", 1,
+  "NO3_N",  "NO3.N_QC",  "mg/L", 1,
+  "NH4_N",  "NH4.N_QC",  "mg/L", 1,
+  "TSS",    "TSS_QC",    "mg/L", 1,
+  "Al",     "Al_QC",     "µg/L", 0.001,
+  "As",     "As_QC",     "µg/L", 0.001,
+  "B",      "B_QC",      "µg/L", 0.001,
+  "Ba",     "Ba_QC",     "µg/L", 0.001,
+  "Ca",     "Ca_QC",     "µg/L", 0.001,
+  "Cr",     "Cr_QC",     "µg/L", 0.001,
+  "Fe",     "Fe_QC",     "µg/L", 0.001,
+  "Mn",     "Mn_QC",     "µg/L", 0.001,
+  "Pb",     "Pb_QC",     "µg/L", 0.001,
+  "Sr",     "Sr_QC",     "µg/L", 0.001,
+  "Zn",     "Zn_QC",     "µg/L", 0.001
+)
+
+# Check that all required analytes are present
+missing_cols <- setdiff(analytes$col, names(WC_dat))
+
+if (length(missing_cols) > 0) {
+  stop(
+    "Missing analyte columns: ",
+    paste(missing_cols, collapse = ", ")
+  )
+}
+
+
+stopifnot(nrow(analytes) > 0)
+
+# Match lab detection flags, when available; a blank flag is not a BDL flag.
+analytes <- analytes %>%
+  mutate(dl_col = sub("_QC$", "_DL_lab", col),
+         dl_col = if_else(dl_col %in% names(WC_dat), dl_col, NA_character_))
+```
+
+```{r flow_dat, message=FALSE, warning=FALSE }
+
+# Daily discharge and precipitation observations
+df_hydro <- read.csv(
+  file.path(data_dir, "hydro_clim_WY2024_2026.csv")
+) %>%
+  mutate(
+    date = as.Date(date, format = "%Y-%m-%d")
+  )
+```
+
+## 3. Prepare continuous daily hydrology
+
+Daily `Q` must be m3/s. `NA` is preserved; only a measured zero is treated as zero
+
+```{r flow}
+flow_daily <- df_hydro %>%
+  transmute(site = tolower(trimws(as.character(site))),
+            date = as.Date(date), Q = as.numeric(Q),
+            water_year, precip_mm) %>%
+  filter(site %in% sites_keep, between(date, analysis_start, analysis_end))
+
+if (anyDuplicated(flow_daily[c("site", "date")])) {
+  stop("Duplicate site/date combinations in df_hydro: resolve before estimating loads.")
+}
+
+flow_daily <- tidyr::expand_grid(
+  site = sites_keep,
+  date = seq(analysis_start, analysis_end, by = "day")
+) %>%
+  left_join(flow_daily, by = c("site", "date")) %>%
+  arrange(site, date) %>%
+  mutate(Q_daily_liters = if_else(!is.na(Q) & Q >= 0, Q * 86400 * 1000, NA_real_),
+         missing_or_invalid_Q = is.na(Q_daily_liters))
+
+flow_coverage <- flow_daily %>%
+  group_by(site) %>%
+  summarise(n_days = n(), n_valid_Q = sum(!missing_or_invalid_Q),
+            pct_valid_Q = 100 * mean(!missing_or_invalid_Q),
+            n_zero_Q = sum(Q == 0, na.rm = TRUE), .groups = "drop")
+knitr::kable(flow_coverage, digits = 1)
+```
+
+## 4. Prepare water-chemistry observations
+
+
+```{r chemistry}
+
+# 4. Prepare chemistry observations
+chem_wide <- WC_dat %>%
+  mutate(
+    site = site_lab,
+    sample_id = row_number()
+  ) %>%
+  filter(
+    site %in% sites_keep,
+    between(date, analysis_start, analysis_end)
+  ) %>%
+  arrange(site, datetime)
+
+
+# Detection limit flags
+dl_lookup <- analytes %>%
+  filter(!is.na(dl_col)) %>%
+  select(analyte, dl_col)
+
+flag_long <- chem_wide %>%
+  select(
+    sample_id,
+    any_of(dl_lookup$dl_col)
+  ) %>%
+  pivot_longer(
+    cols = all_of(dl_lookup$dl_col),
+    names_to = "dl_col",
+    values_to = "bdl_flag"
+  ) %>%
+  left_join(dl_lookup, by = "dl_col") %>%
+  select(sample_id, analyte, bdl_flag)
+
+
+# Individual chemistry observations
+chem_long <- chem_wide %>%
+  select(
+    sample_id,
+    site,
+    date,
+    datetime,
+    storm,
+    all_of(analytes$col)
+  ) %>%
+  pivot_longer(
+    cols = all_of(analytes$col),
+    names_to = "col",
+    values_to = "concentration_raw"
+  ) %>%
+  left_join(analytes, by = "col") %>%
+  left_join(
+    flag_long,
+    by = c("sample_id", "analyte")
+  ) %>%
+  mutate(
+    concentration_raw = as.numeric(concentration_raw),
+    concentration_mg_L = concentration_raw * to_mg_L,
+    tsf = as.integer(date - fire_date)
+  ) %>%
+  filter(
+    is.finite(concentration_mg_L),
+    concentration_mg_L >= 0
+  ) %>%
+  {
+    if (include_bdl) {
+      .
+    } else {
+      filter(., bdl_flag != "yes" | is.na(bdl_flag))
+    }
+  } %>%
+  arrange(site, analyte, datetime, sample_id)
+
+
+# Daily representative concentrations
+chem_daily <- chem_long %>%
+  group_by(site, analyte, date) %>%
+  summarise(
+    concentration_mg_L = median(
+      concentration_mg_L,
+      na.rm = TRUE
+    ),
+    n_samples = n(),
+    concentration_min = min(concentration_mg_L),
+    concentration_max = max(concentration_mg_L),
+    first_sample = min(datetime),
+    last_sample = max(datetime),
+    tsf = first(tsf),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    multiple_samples = n_samples > 1
+  ) %>%
+  arrange(site, analyte, date)
+
+
+# Review storm sampling
+storm_daily_summary <- chem_daily %>%
+  filter(multiple_samples) %>%
+  arrange(site, analyte, date)
+
+knitr::kable(
+  storm_daily_summary,
+  digits = 3
+)
+
+```
+
+## 5. Estimate interval water volumes and solute loads
+
+For a sample on date `t_k`, interval volume includes days **after the previous sample date through `t_k`**, inclusive. For the first sample it begins on `analysis_start`. The number of observed daily Q values must equal the number of calendar days in the interval. Missing intervals are flagged and excluded from the contiguous DMC run; subsequent intervals can start a new run. The first interval is only meaningful if the assumed initial chemistry concentration represents the preceding interval.
+
+```{r interval-loads}
+# One row per chemistry sample interval, using daily flow observations.
+
+# 5. Estimate interval water volumes and solute loads
+chem_intervals <- chem_daily %>%
+  group_by(site, analyte) %>%
+  arrange(date, .by_group = TRUE) %>%
+  mutate(
+    interval_start = lag(
+      date,
+      default = analysis_start - 1L
+    ) + 1L,
+
+    interval_end = date,
+
+    expected_days = as.integer(
+      interval_end - interval_start
+    ) + 1L
+  ) %>%
+  ungroup()
+
+
+# Calculate water volume for each interval
+interval_flow <- chem_intervals %>%
+  select(
+    site,
+    analyte,
+    date,
+    interval_start,
+    interval_end,
+    expected_days
+  ) %>%
+  left_join(
+    flow_daily %>%
+      select(
+        site,
+        flow_date = date,
+        Q_daily_liters
+      ),
+    by = "site",
+    relationship = "many-to-many"
+  ) %>%
+  filter(
+    flow_date >= interval_start,
+    flow_date <= interval_end
+  ) %>%
+  group_by(site, analyte, date) %>%
+  summarise(
+    n_valid_Q = sum(!is.na(Q_daily_liters)),
+
+    Q_interval_liters = sum(
+      Q_daily_liters,
+      na.rm = TRUE
+    ),
+
+    .groups = "drop"
+  )
+
+
+# Calculate solute loads
+loads_all <- chem_intervals %>%
+  left_join(
+    interval_flow,
+    by = c("site", "analyte", "date")
+  ) %>%
+  mutate(
+    n_valid_Q = coalesce(n_valid_Q, 0L),
+
+    complete_interval =
+      n_valid_Q == expected_days &
+      expected_days > 0,
+
+    Q_interval_liters = if_else(
+      complete_interval,
+      Q_interval_liters,
+      NA_real_
+    ),
+
+    load_interval_g =
+      concentration_mg_L *
+      Q_interval_liters / 1000
+  ) %>%
+  arrange(site, analyte, date) %>%
+  group_by(site, analyte) %>%
+  mutate(
+    run_id = cumsum(!complete_interval),
+
+    in_dmc =
+      run_id == 0L &
+      complete_interval
+  ) %>%
+  ungroup()
+
+
+# QC summary
+interval_qc <- loads_all %>%
+  group_by(site, analyte) %>%
+  summarise(
+    n_intervals = n(),
+
+    n_complete_intervals = sum(
+      complete_interval
+    ),
+
+    n_in_dmc = sum(in_dmc),
+
+    n_multiple_sample_days = sum(
+      multiple_samples
+    ),
+
+    .groups = "drop"
+  )
+
+knitr::kable(interval_qc)
+
+
+
+# The first incomplete interval stops the primary series. If it occurs early,
+# change analysis_start to a date with complete Q coverage, then rerun.
+dmc_long <- loads_all %>%
+  filter(in_dmc) %>%
+  group_by(site, analyte) %>%
+  arrange(date, .by_group = TRUE) %>%
+  mutate(
+    Q_c_liters = cumsum(Q_interval_liters),
+
+    load_cum_g = cumsum(load_interval_g),
+
+    Q_c_norm = if (
+      max(Q_c_liters) > 0
+    ) {
+      Q_c_liters / max(Q_c_liters)
+    } else {
+      NA_real_
+    },
+
+    load_c_norm = if (
+      max(load_cum_g) > 0
+    ) {
+      load_cum_g / max(load_cum_g)
+    } else {
+      NA_real_
+    }
+  ) %>%
+  ungroup() %>%
+  mutate(
+    site = factor(
+      site,
+      levels = sites_keep,
+      labels = unname(site_labels[sites_keep])
+    )
+  )
+```
+
+## 6. DMC slope models and descriptive interpretation
+
+The original script fits `load_c_norm ~ 0 + Q_c_norm`. Retained here for comparability, with the important caveat that normalized cumulative data are not independent. Interpret slopes above/below one as **relative curvature summaries** (enrichment/dilution), not proof of a process. The 1:1 reference is also plotted.
+
+```{r models}
+fit_one_dmc <- function(dat) {
+  dat <- filter(dat, is.finite(Q_c_norm), is.finite(load_c_norm))
+  if (nrow(dat) < 3 || n_distinct(dat$Q_c_norm) < 2) {
+    return(tibble(n_samples = nrow(dat), slope = NA_real_, std_error = NA_real_,
+                  lwr = NA_real_, upr = NA_real_, p_vs_1 = NA_real_, r_squared = NA_real_))
+  }
+  fit <- lm(load_c_norm ~ 0 + Q_c_norm, data = dat)
+  co <- summary(fit)$coefficients
+  slope <- unname(co[1, "Estimate"])
+  se <- unname(co[1, "Std. Error"])
+  df <- df.residual(fit)
+  tcrit <- qt(0.975, df)
+  tibble(n_samples = nrow(dat), slope = slope, std_error = se,
+         lwr = slope - tcrit * se, upr = slope + tcrit * se,
+         p_vs_1 = 2 * pt(abs((slope - 1) / se), df, lower.tail = FALSE),
+         r_squared = summary(fit)$r.squared)
+}
+
+models_tbl <- dmc_long %>%
+  group_by(site, analyte) %>%
+  group_modify(~fit_one_dmc(.x)) %>%
+  ungroup() %>%
+  mutate(interpretation = case_when(
+    is.na(slope) ~ "Insufficient data",
+    slope > 1 ~ "Relative enrichment (descriptive)",
+    slope < 1 ~ "Relative dilution (descriptive)",
+    TRUE ~ "Proportional"
+  ))
+
+knitr::kable(models_tbl %>% select(site, analyte, n_samples, slope, lwr, upr, p_vs_1, interpretation), digits = 3)
+```
+
+## 7. Plot DMCs
+
+```{r plotting-functions}
+plot_dmc <- function(analyte_name) {
+  dat <- dmc_long %>% filter(analyte == analyte_name)
+  mod <- models_tbl %>% filter(analyte == analyte_name, is.finite(slope)) %>%
+    mutate(label = sprintf("β = %.2f", slope))
+  ggplot(dat, aes(Q_c_norm, load_c_norm)) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey65") +
+    geom_abline(data = mod, aes(slope = slope, intercept = 0),
+                inherit.aes = FALSE, color = "black", linewidth = 0.6) +
+    geom_path(color = "grey55", linewidth = 0.7, na.rm = TRUE) +
+    geom_point(aes(color = tsf), size = 2.5, na.rm = TRUE) +
+    geom_text(data = mod, aes(x = 0.05, y = 0.94, label = label),
+              inherit.aes = FALSE, hjust = 0, size = 4) +
+    facet_wrap(~site, nrow = 1, drop = FALSE) +
+    scale_color_viridis_c(option = "plasma", direction = -1, name = "Days since fire") +
+    coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+    labs(x = "Norm. cumulative streamflow",
+         y = paste("Norm. cumulative", analyte_name)) +
+    theme_minimal(base_size = 12) +
+    theme(legend.position = "bottom", panel.grid.minor = element_blank())
+}
+
+### better visual
+# Updated DMC plotting function
+
+plot_dmc <- function(analyte_name) {
+
+  dat <- dmc_long %>%
+    filter(analyte == analyte_name)
+
+  mod <- models_tbl %>%
+    filter(
+      analyte == analyte_name,
+      is.finite(slope)
+    ) %>%
+    mutate(
+      label = sprintf("β = %.2f", slope)
+    )
+
+  ggplot(dat, aes(Q_c_norm, load_c_norm)) +
+
+    # 1:1 reference line
+    geom_abline(
+      slope = 1,
+      intercept = 0,
+      linetype = "dashed",
+      color = "grey65",
+      linewidth = 0.5
+    ) +
+
+    # Estimated slope
+    geom_abline(
+      data = mod,
+      aes(slope = slope, intercept = 0),
+      inherit.aes = FALSE,
+      color = "black",
+      linewidth = 0.6
+    ) +
+
+    # Cumulative trajectory
+    geom_path(
+      color = "grey55",
+      linewidth = 0.6,
+      na.rm = TRUE
+    ) +
+
+    # Observations
+    geom_point(
+      aes(color = tsf),
+      size = 2,
+      na.rm = TRUE
+    ) +
+
+    # Slope annotations
+    geom_text(
+      data = mod,
+      aes(
+        x = 0.05,
+        y = 0.88,
+        label = label
+      ),
+      inherit.aes = FALSE,
+      hjust = 0,
+      vjust = 1,
+      size = 2.7
+    ) +
+
+    # Site panels
+    facet_wrap(
+      ~site,
+      nrow = 1,
+      drop = FALSE
+    ) +
+
+    # Color scale
+    scale_color_viridis_c(
+      option = "plasma",
+      direction = -1,
+      name = "Days since fire"
+    ) +
+
+    # Consistent axes
+    scale_x_continuous(
+      limits = c(0, 1),
+      breaks = c(0, 0.5, 1),
+      expand = expansion(mult = 0.02)
+    ) +
+
+    scale_y_continuous(
+      limits = c(0, 1),
+      breaks = c(0, 0.5, 1),
+      expand = expansion(mult = 0.02)
+    ) +
+
+    coord_equal() +
+
+    # Individual panel title only
+    labs(
+      title = analyte_name,
+      x = NULL,
+      y = NULL
+    ) +
+
+    theme_minimal(base_size = 10) +
+
+    theme(
+      # Title
+      plot.title = element_text(
+        size = 13,
+        face = "bold",
+        hjust = 0.5,
+        margin = margin(b = 6)
+      ),
+
+      # Facet labels
+      strip.text = element_text(
+        size = 9,
+        face = "bold"
+      ),
+
+      # Axis tick labels
+      axis.text = element_text(
+        size = 8,
+        color = "black"
+      ),
+
+      # Remove individual axis titles
+      axis.title = element_blank(),
+
+      # Grid
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(
+        color = "grey90",
+        linewidth = 0.3
+      ),
+
+      # Spacing between site facets
+      panel.spacing.x = unit(0.25, "cm"),
+
+      # Legend
+      legend.position = "bottom",
+      legend.title = element_text(size = 10),
+      legend.text = element_text(size = 9),
+
+      # Margins
+      plot.margin = margin(5, 5, 5, 5)
+    )
+}
+
+###
+
+
+dmc_TSS_plt <- plot_dmc("TSS")
+dmc_DOC_plt <- plot_dmc("DOC")
+dmc_TOC_plt <- plot_dmc("TOC")
+dmc_TND_plt <- plot_dmc("TDN")
+dmc_NO3_plt <- plot_dmc("NO3_N")
+plot_dmc("NH4_N")
+dmc_PO4_plt <- plot_dmc("PO4_P")
+
+dmc_Al_plt <- plot_dmc("Al")
+plot_dmc("As")
+plot_dmc("B")
+dmc_Ba_plt <- plot_dmc("Ba")
+dmc_Ca_plt <- plot_dmc("Ca")
+plot_dmc("Cr")
+
+dmc_Fe_plt <- plot_dmc("Fe")
+dmc_Pb_plt <- plot_dmc("Mn")
+plot_dmc("Pb")
+dmc_Sr_plt <- plot_dmc("Sr")
+plot_dmc("Zn")
+
+
+
+```
+
+## 8. Residual diagnostics
+
+These are residuals from the descriptive normalized DMC regression. Their cumulative sum is a visual diagnostic only, not a formal independent-error change-point test.
+
+```{r residuals}
+residuals_long <- dmc_long %>%
+  left_join(models_tbl %>% select(site, analyte, slope), by = c("site", "analyte")) %>%
+  mutate(fitted_norm = slope * Q_c_norm,
+         resid_norm = load_c_norm - fitted_norm) %>%
+  group_by(site, analyte) %>%
+  arrange(date, .by_group = TRUE) %>%
+  mutate(cumul_resid = cumsum(resid_norm)) %>%
+  ungroup()
+
+plot_dmc_residuals <- function(analyte_name) {
+  residuals_long %>%
+    filter(analyte == analyte_name) %>%
+    ggplot(aes(date, cumul_resid)) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "grey65") +
+    geom_line(color = "grey45") +
+    geom_point(aes(color = tsf), size = 2) +
+    facet_wrap(~site, nrow = 1) + #scales = "free_y")
+    scale_color_viridis_c(option = "plasma", direction = -1,
+                          name = "Days since fire") +
+    labs(title = paste("DMC residuals:", analyte_name),
+         x = NULL, y = "Residual") +
+    theme_minimal(base_size = 12) +
+    theme(legend.position = "bottom")
+}
+
+
+
+plot_dmc_residuals("TSS")
+plot_dmc_residuals("DOC")
+plot_dmc_residuals("TOC")
+plot_dmc_residuals("TDN")
+plot_dmc_residuals("NO3_N")
+plot_dmc_residuals("NH4_N")
+plot_dmc_residuals("PO4_P")
+
+plot_dmc_residuals("Al")
+plot_dmc_residuals("As")
+plot_dmc_residuals("B")
+plot_dmc_residuals("Ba")
+plot_dmc_residuals("Ca")
+plot_dmc_residuals("Cr")
+
+plot_dmc_residuals("Fe")
+plot_dmc_residuals("Mn")
+plot_dmc_residuals("Pb")
+plot_dmc_residuals("Sr")
+plot_dmc_residuals("Zn")
+
+
+####
+dmc_TSS_res_plt <- plot_dmc_residuals("TSS")
+dmc_DOC_res_plt <- plot_dmc_residuals("DOC")
+dmc_TOC_res_plt <- plot_dmc_residuals("TOC")
+dmc_TND_res_plt <- plot_dmc_residuals("TDN")
+dmc_NO3_res_plt <- plot_dmc_residuals("NO3_N")
+
+dmc_PO4_res_plt <- plot_dmc_residuals("PO4_P")
+
+dmc_Al_res_plt <- plot_dmc_residuals("Al")
+plot_dmc("As")
+plot_dmc("B")
+dmc_Ba_res_plt <- plot_dmc_residuals("Ba")
+dmc_Ca_res_plt <- plot_dmc_residuals("Ca")
+plot_dmc("Cr")
+
+dmc_Fe_res_plt <- plot_dmc_residuals("Fe")
+dmc_Pb_res_plt <- plot_dmc_residuals("Mn")
+plot_dmc("Pb")
+dmc_Sr_res_plt <- plot_dmc_residuals("Sr")
+plot_dmc("Zn")
+
+
+```
+
+## 9. Export results (optional)
+
+```{r export, eval=FALSE}
+# dir.create("dmc_outputs", showWarnings = FALSE)
+# write.csv(models_tbl, "dmc_outputs/dmc_slopes_winters_ophir.csv", row.names = FALSE)
+# write.csv(loads_all, "dmc_outputs/dmc_interval_qc_winters_ophir.csv", row.names = FALSE)
+# write.csv(dmc_long, "dmc_outputs/dmc_loads_winters_ophir.csv", row.names = FALSE)
+# ggsave("dmc_outputs/DMC_DOC.png", plot_dmc("DOC"), width = 9, height = 4, dpi = 300)
+```
+
+
+```{r}
+
+
+DMC_grid <- ggarrange(
+  dmc_TSS_res_plt,
+  dmc_DOC_res_plt,
+  dmc_TOC_res_plt,
+  dmc_TND_res_plt,
+  dmc_NO3_res_plt,
+  dmc_PO4_res_plt,
+  dmc_Al_res_plt,
+  dmc_Ba_res_plt, 
+  dmc_Ca_res_plt,
+  dmc_Fe_res_plt,
+  dmc_Pb_res_plt,
+  dmc_Sr_res_plt,
+  common.legend = T,
+  ncol=2,
+  nrow=6)
+
+DMC_grid
+
+
+```
+
+
+
+
+
+
+```{r}
+
+
+DMC_grid <- ggarrange(
+  dmc_TSS_plt,
+  dmc_DOC_plt,
+ # dmc_TOC_plt,
+  dmc_TND_plt,
+  dmc_NO3_plt,
+  dmc_PO4_plt,
+  common.legend = T,
+  ncol=1,
+  nrow=5)
+
+ggsave(
+    filename = ("DMC_nitrients.png"),
+    plot = DMC_grid,
+    width = 11,
+    height = 14.5,
+    dpi = 300,
+    bg = "white"
+  )
+  
+  
+DMC_metal_grid <- ggarrange(
+  dmc_Al_plt,
+  dmc_Ba_plt, 
+  dmc_Fe_plt,
+  dmc_Pb_plt,
+  dmc_Sr_plt,
+  common.legend = T,
+  ncol=1,
+  nrow=5)
+
+DMC_metal_grid
+
+
+
+ggsave(
+    filename = ("DMC_metals.png"),
+    plot = DMC_metal_grid,
+    width = 11,
+    height = 14.5,
+    dpi = 300,
+    bg = "white"
+  )
+  
+```
+
+
+
+### Flow time series
+
+```{r,  fig.width=15, fig.height=4, out.width="99%", echo=F, include=TRUE}
+ref_date <- as.Date("2024-09-25")
+
+
+# Site order and labels
+site_order <- c(
+    "winters_usgs",
+    "ophir"
+)
+
+site_strip_labs_v2 <- c(
+  winters_usgs = "Winters USGS",
+  ophir        = "Ophir"
+)
+
+
+plot_start <- as.Date("2024-10-14")
+plot_end   <- as.Date("2026-05-14")
+
+
+# Prepare hydrograph data for plotting
+
+flow_plot_dat <- df_hydro %>%
+  mutate(
+    date = as.Date(date),
+    tsf  = as.integer(difftime(date, ref_date, units = "days")),
+    site = factor(as.character(site), levels = site_order),
+    flow_plot = dplyr::coalesce(Q, Q)
+  ) %>%
+  filter(site == "winters_usgs" | site == "ophir", date > plot_start, date < plot_end) %>%
+  arrange(site, tsf)
+
+
+
+# Plot
+
+flow_density_plt <- ggplot(
+  flow_plot_dat,
+  aes(x = tsf, y = flow_plot)
+) +
+  # new color scale for tsf-colored flow
+  ggnewscale::new_scale_color() +
+  geom_segment(
+    aes(xend = tsf, y = 0, yend = flow_plot, color = tsf),
+    linewidth = 1.1,
+    alpha = 0.9
+  ) +
+  geom_line(
+    aes(color = tsf),
+    linewidth = 0.7,
+    alpha = 0.9
+  ) +
+  facet_wrap(
+    ~site,
+    nrow = 1,
+    scales = "free_y",
+    labeller = labeller(site = as_labeller(site_strip_labs_v2))
+  ) +
+  scale_color_viridis_c(
+    option = "plasma",
+    direction = -1,
+    name = "Days since fire"
+  ) +
+  # scale_y_continuous(
+  #   limits = c(min(flow_segments_plot_tsf$seg_y, na.rm = TRUE) * 1.2, NA)
+  # ) +
+  labs(
+    x = NULL,
+    y = expression(Streamflow~(m^3~s^-1))
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11),
+    panel.spacing = unit(0.9, "lines"),
+    plot.margin = margin(0, 10.5, 0, 10.5),
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12, angle = 90, vjust = 0.5)
+  )
+
+flow_density_plt
+
+```
+
+```{r, echo=FALSE, include =F}
+# ggsave(plot = flow_density_plt, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/hydrograph_density_plot.png",sep=""),width=5.5, height=2.75,dpi=300)
+
+```
+
+
+

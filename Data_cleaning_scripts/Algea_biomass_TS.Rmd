@@ -51,22 +51,22 @@ library(ggpmisc)
 
 site_colors <- c(
   "Ophir" = "#7d5ba6",
-  "Winters" = "#4287f5",
-  "Winters upstream" = "#7fc5f0",
-  "Davis" = "#d9cb7c",
-  "Browns" = "#c94d00", 
-  "Browns sub"  = "#bd772d"
+  "Winters" = "#8b9933",
+  "Winters upstream" = "#b6cf15",
+  "Davis" = "#e2d346",
+  "Browns" = "#117733", 
+  "Browns sub"  = "#10de54"
 )
 
 
 site_lab_colors <- c(
   "ophir" = "#7d5ba6",
     "ophir_hw" = "#7d1ba6",
-  "winters_usgs" = "#4287f5",
-  "winters_up" = "#7fc5f0",
-  "davis" = "#d9cb7c",
-  "browns" = "#c94d00", 
-  "browns_sub"  = "#bd772d",
+  "winters_usgs" = "#8b9933",
+  "winters_up" = "#b6cf15",
+  "davis" = "#e2d346",
+  "browns" = "#117733", 
+  "browns_sub"  = "#10de54",
    "browns_hw"  = "#bd272d"
 )
 

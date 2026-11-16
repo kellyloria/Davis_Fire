@@ -1,0 +1,705 @@
+---
+title: "ERDC Davis Fire MS"
+subtitle: "Bayesian regression with observed discharge and antecedent precipitation"
+author: "Kelly A. Loria"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+  github_document:
+    toc: true
+params:
+  chemistry_csv: "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Dryad_data/DFMS_water_quality_data_2026.csv"
+  hydro_csv: "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Dryad_data/DFMS_hydro_clim_WY2024_2026.csv"
+  output_dir: "outputs/bayes"
+  qc_substitution_factor: 0.5   # QC value of a flagged result is assumed to be DL/2; limit = QC / factor
+  assume_quantified: "TSS"      # analytes with no *_DL_lab column that are treated as quantified
+  burned_only: TRUE             # TRUE = drop ophir (only unburned site); FALSE = all six sites
+  use_discharge: TRUE           # TRUE = discharge + precipitation; FALSE = precipitation only
+  min_n: 18
+  chains: 4
+  iter: 2000                    # 1,000 warmup + 1,000 sampling per chain
+  adapt_delta: 0.97
+  cri: 0.95                     # credible-interval level reported everywhere
+---
+
+## Left-censored lognormal models with observed discharge and antecedent precipitation
+
+One model type, one set of reported numbers. Each solute is modeled separately with a **left-censored lognormal Bayesian regression** (`brms`):
+
+```         
+log(C_j) ~ Normal(mu_j, sigma^2)
+mu_j = site_j + b1*sin(2*pi*doy/365.25) + b2*cos(2*pi*doy/365.25) + b3*Q*_j + b4*P*_j + u_stream-date(j)
+```
+
+*Predictors:*
+
+- `Q*` = standardized log(1 + discharge in L/s)
+- `P*` = standardized log(1 + 3-day cumulative precipitation, mm).
+
+Log transform: the models describe percent-type (multiplicative) changes, and a log scale keeps a few very high flows or storms from dominating. The “1 +” lets days with zero flow or zero rain be used.
+
+*Nondetects:*
+
+- For observations of solutes below detection limits- instead of replacing them with a made-up number (zero or half the limit), the model says “the true value is somewhere below this limit” and uses the probability of that.
+
+*Stream-date random intercept* - `u_stream-date` is a random intercept shared by samples from the same stream on the same date (upstream/downstream pairs and repeated storm samples). It is included only when an analyte has such groups. - `site` is a fixed effect, so site gets its own baseline concentration, because sites differ in geology and chemistry.
+
+*Priors* - Priors: Non informative = Normal(0, 1) on all population-level coefficients, Exponential(1) on sigma, `brms` defaults otherwise.
+
+*Reports* - `burned_only: TRUE` fits only the five burned sites (browns, browns_sub, winters_up, winters_usgs, davis). - Reported: posterior median and `cri` credible interval of exp(b), the multiplicative change in concentration per one SD, plus the contrast exp(b3 - b4) comparing discharge and precipitation effects.
+
+```{r setup, message=FALSE, warning=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, warning=TRUE, message=TRUE, fig.width=9, fig.height=5)
+library(tidyverse)
+library(lubridate)
+library(brms)
+library(knitr)
+library(posterior)
+dir.create(params$output_dir, recursive=TRUE, showWarnings=FALSE)
+# Flexible parsers: accept Date/POSIXct as-is, otherwise m/d/yy (or m/d/yyyy), then ISO.
+parse_date_flex <- function(x) {
+  if (inherits(x, "Date")) return(x)
+  if (inherits(x, "POSIXt")) return(as.Date(x, tz="America/Los_Angeles"))
+  x <- as.character(x)
+  d <- suppressWarnings(lubridate::mdy(x, quiet=TRUE))
+  if (mean(is.na(d[!is.na(x)])) > 0.5) d <- suppressWarnings(lubridate::ymd(x, quiet=TRUE))
+  d
+}
+parse_datetime_flex <- function(x) {
+  if (inherits(x, "POSIXt")) return(lubridate::with_tz(x, "America/Los_Angeles"))
+  lubridate::with_tz(lubridate::ymd_hms(x, tz="UTC", quiet=TRUE), "America/Los_Angeles")
+}
+site_lookup <- tribble(
+ ~site_lab, ~stream_id, ~position,
+ "browns_sub", "browns", "upstream",
+ "browns", "browns", "downstream",
+ "winters_up", "winters", "upstream",
+ "winters_usgs", "winters", "downstream",
+ "ophir", "ophir", "single",
+ "davis", "davis", "single"
+) %>% mutate(burned = site_lab != "ophir")   # ophir is the only unburned site
+analytes <- tribble(
+ ~analyte, ~col, ~unit, ~to_mg_L,
+ "DOC","DOC_QC","mg/L",1,
+ "TOC","TOC_QC","mg/L",1,
+ "TDN","TDN_QC","mg/L",1,
+ "PO4_P","PO4.P_QC","mg/L",1,
+ "NO3_N","NO3.N_QC","mg/L",1,
+ "NH4_N","NH4.N_QC","mg/L",1,
+ "TSS","TSS_QC","mg/L",1,
+ "Al","Al_QC","ug/L",0.001,
+ "As","As_QC","ug/L",0.001,
+ "B","B_QC","ug/L",0.001,
+ "Ba","Ba_QC","ug/L",0.001,
+ "Ca","Ca_QC","ug/L",0.001,
+ "Cr","Cr_QC","ug/L",0.001,
+ "Fe","Fe_QC","ug/L",0.001,
+ "Mn","Mn_QC","ug/L",0.001,
+ "Pb","Pb_QC","ug/L",0.001,
+ "Sr","Sr_QC","ug/L",0.001,
+ "Zn","Zn_QC","ug/L",0.001
+) %>% mutate(dl_col = sub("_QC$", "_DL_lab", col))
+stopifnot(nrow(analytes)==18)
+```
+
+## Data organization check of the input files
+
+```{r data_org}
+for (f in c(params$chemistry_csv, params$hydro_csv))
+  if (!file.exists(f)) stop("Input file not found: ", f, "\n(working directory: ", getwd(), ")", call. = FALSE)
+
+chem_head  <- readr::read_csv(params$chemistry_csv, n_max = 5, show_col_types = FALSE)
+hydro_head <- readr::read_csv(params$hydro_csv,     n_max = 5, show_col_types = FALSE)
+
+# Chemistry: site_lab, date, each analyte's *_QC column, and its *_DL_lab flag
+# (analytes in params$assume_quantified have no flag column).
+need_chem <- c("site_lab", "date", analytes$col,
+               analytes$dl_col[!analytes$analyte %in% params$assume_quantified])
+miss_chem <- setdiff(need_chem, names(chem_head))
+
+# Hydrology: a site column, a discharge column, and the daily predictors
+site_col   <- intersect(c("site_lab", "site"), names(hydro_head))[1]
+q_col      <- intersect(c("Q_obs", "Q"), names(hydro_head))[1]
+need_hydro <- c("date", "water_year", "precip_mm", "ppt_3day", "season_component", "functional_component")
+miss_hydro <- c(if (is.na(site_col)) "site_lab (or site)", if (is.na(q_col)) "Q_obs (or Q)",
+                setdiff(need_hydro, names(hydro_head)))
+
+# Site labels must match site_lookup after lower-casing and trimming
+chem_sites  <- readr::read_csv(params$chemistry_csv, col_select = any_of("site_lab"), show_col_types = FALSE) %>%
+  pull(site_lab) %>% as.character() %>% trimws() %>% str_to_lower() %>% unique()
+bad_sites   <- setdiff(chem_sites, site_lookup$site_lab)
+hydro_sites <- if (!is.na(site_col))
+  readr::read_csv(params$hydro_csv, col_select = all_of(site_col), show_col_types = FALSE)[[1]] %>%
+    as.character() %>% trimws() %>% str_to_lower() %>% unique() else character()
+no_hydro    <- setdiff(chem_sites, hydro_sites)
+
+cat("Chemistry file:", params$chemistry_csv, "\n  columns:", ncol(chem_head), "| sites:", paste(sort(chem_sites), collapse = ", "), "\n")
+cat("Hydrology file:", params$hydro_csv,     "\n  columns:", ncol(hydro_head), "| sites:", paste(sort(hydro_sites), collapse = ", "), "\n")
+problems <- c(
+  if (length(miss_chem))  paste("Chemistry is missing columns:", paste(miss_chem, collapse = ", ")),
+  if (length(miss_hydro)) paste("Hydrology is missing columns:", paste(miss_hydro, collapse = ", ")),
+  if (length(bad_sites))  paste("Chemistry site_lab not in site_lookup:", paste(bad_sites, collapse = ", ")),
+  if (length(no_hydro))   paste("Chemistry sites with no hydrology rows:", paste(no_hydro, collapse = ", ")))
+if (length(problems)) stop("Pre-flight check failed:\n- ", paste(problems, collapse = "\n- "), call. = FALSE)
+cat("Pre-model check passed.\n")
+```
+
+## 1. Import and validate source measurements
+
+```{r import}
+read_required <- function(path, label) {
+  if (!file.exists(path)) stop(label, " not found: ", path, call.=FALSE)
+  readr::read_csv(path, show_col_types=FALSE, guess_max=Inf)
+}
+# Always read the CSV named in params (no in-memory shortcut, so the file you set is the file used).
+chem <- read_required(params$chemistry_csv, "Chemistry")
+if (!"site_lab" %in% names(chem)) stop("Chemistry must contain site_lab")
+if (!"date" %in% names(chem)) stop("Chemistry must contain date")
+n_chem_raw <- nrow(chem)
+chem <- chem %>% mutate(site_lab=str_to_lower(trimws(as.character(site_lab))),
+                        date=parse_date_flex(date),
+                        sample_datetime=if ("datetime" %in% names(.))
+                          parse_datetime_flex(datetime) else
+                          as.POSIXct(date, tz="America/Los_Angeles")) %>%
+  left_join(site_lookup, by="site_lab")
+if (anyNA(chem$stream_id))
+  stop("site_lab values not in site_lookup: ",
+       paste(unique(chem$site_lab[is.na(chem$stream_id)]), collapse=", "))
+if (anyNA(chem$date)) stop("Missing/unparseable chemistry dates")
+# Multiple field collections during a storm are valid observations, not duplicates.
+# Preserve each row and audit repeated site/date groups.
+storm_repeats <- chem %>% count(site_lab,date,name="n_samples") %>% filter(n_samples>1)
+if (nrow(storm_repeats)) {
+  message("Repeated site/date field collections retained (storm samples):")
+  print(storm_repeats)
+}
+# Date-only POSIXct values are NOT evidence of distinct sampling times.
+chem <- chem %>% mutate(
+  sample_id = row_number(),
+  storm_event = if_else(date == as.Date("2024-10-16"),
+                        "storm_2024_10_16", NA_character_),
+  stream_date = interaction(stream_id,date,drop=TRUE)
+)
+print(chem %>% count(stream_id,site_lab))
+print(chem %>% group_by(site_lab) %>% summarise(first=min(date),last=max(date),n=n(),.groups="drop"))
+```
+
+```{r flow-import}
+# All Q values are directly measured (cross-section or USGS gage). No interpolation,
+# rating extrapolation, or transfer of a gage measurement to a different site.
+
+# 1. Load hydrology (one row per site per day) ---------------------------------
+# guess_max = Inf: the first ~1000 rows of some columns are NA, so default type
+# guessing would mis-type functional_component / season_component.
+hydro_raw <- readr::read_csv(params$hydro_csv, show_col_types = FALSE, guess_max = Inf)
+site_col <- intersect(c("site_lab", "site"), names(hydro_raw))[1]
+q_col    <- intersect(c("Q_obs", "Q"), names(hydro_raw))[1]
+if (is.na(site_col) || is.na(q_col))
+  stop("Hydrology file needs a site/site_lab column and a Q_obs (or Q) column. Found: ",
+       paste(names(hydro_raw), collapse = ", "))
+need_cols <- c("date", "water_year", "precip_mm", "ppt_3day",
+               "season_component", "functional_component")
+if (length(setdiff(need_cols, names(hydro_raw))))
+  stop("Hydrology file is missing: ", paste(setdiff(need_cols, names(hydro_raw)), collapse = ", "))
+
+flow_cross <- hydro_raw %>%
+  transmute(
+    site_lab = str_to_lower(trimws(as.character(.data[[site_col]]))),
+    date = parse_date_flex(date),
+    water_year = as.integer(water_year),
+    Q_obs = as.numeric(.data[[q_col]]),
+    precip_mm = as.numeric(precip_mm),
+    ppt_3day = as.numeric(ppt_3day),
+    season_component = as.character(season_component),
+    functional_component = as.character(functional_component)
+  )
+
+# 2. Validate hydrology and site matching --------------------------------------
+if (anyNA(flow_cross$date)) stop("Unparseable dates in hydrology file")
+
+flow_duplicates <- flow_cross %>% count(site_lab, date) %>% filter(n > 1)
+if (nrow(flow_duplicates) > 0) {
+  print(flow_duplicates)
+  stop("Duplicate site/date records in hydrology data")
+}
+
+unmatched <- setdiff(unique(chem$site_lab), unique(flow_cross$site_lab))
+if (length(unmatched))
+  stop("Chemistry site_lab values with no hydrology rows: ", paste(unmatched, collapse = ", "),
+       ". Hydrology site labels are: ", paste(sort(unique(flow_cross$site_lab)), collapse = ", "))
+
+n_outside <- sum(chem$date < min(flow_cross$date) | chem$date > max(flow_cross$date))
+if (n_outside > 0)
+  warning(n_outside, " chemistry samples fall outside the hydrology date range")
+
+# 3. Join observed hydrology by site and date ----------------------------------
+hydro_vars <- c("water_year", "Q_obs", "Q_source", "match_hours", "match_precision",
+                "precip_mm", "ppt_3day", "season_component", "functional_component")
+
+chem <- chem %>%
+  mutate(row_id = row_number()) %>%
+  select(-any_of(hydro_vars)) %>%
+  left_join(flow_cross, by = c("site_lab", "date"), relationship = "many-to-one") %>%
+  mutate(
+    Q_source = case_when(
+      !is.na(Q_obs) & site_lab %in% c("winters_usgs", "ophir", "davis") ~ "usgs_observed",
+      !is.na(Q_obs) ~ "cross_section",
+      TRUE ~ NA_character_
+    ),
+    match_precision = if_else(!is.na(Q_obs), "same_date_only", NA_character_),
+    match_hours = NA_real_
+  )
+
+# Storm samples must all survive the join
+stopifnot(nrow(chem) == n_chem_raw)
+
+# 4. Availability summary ------------------------------------------------------
+flow_summary <- chem %>%
+  group_by(site_lab) %>%
+  summarise(
+    n_samples = n(),
+    n_Q = sum(!is.na(Q_obs)),
+    n_ppt = sum(!is.na(precip_mm)),
+    n_ppt3 = sum(!is.na(ppt_3day)),
+    n_flow_type = sum(!is.na(functional_component)),
+    .groups = "drop"
+  )
+print(kable(flow_summary))
+
+# 5. Hydrologic predictors (NA stays NA) ---------------------------------------
+# Q is in m3/s and these streams are small, so log1p(Q) would be ~linear.
+# Convert to L/s first so the transform behaves like a log.
+chem <- chem %>%
+  mutate(
+    logQ = log1p(Q_obs * 1000),
+    logPPT = log1p(precip_mm),
+    logP3 = log1p(ppt_3day),
+    flow_type = factor(functional_component),
+    hydro_season = factor(season_component)
+  )
+
+if (any(chem$Q_obs < 0, na.rm = TRUE)) stop("Negative discharge values detected")
+if (any(chem$precip_mm < 0, na.rm = TRUE) || any(chem$ppt_3day < 0, na.rm = TRUE))
+  stop("Negative precipitation values detected")
+
+print(kable(chem %>% count(site_lab, Q_source, match_precision)))
+message("Hydrology successfully joined to chemistry data")
+```
+
+## 2. Detection-limit metadata and solute-level sample sizes
+
+`*_DL_lab == "yes"` is assumed to indicate a left-censored result; `"no"` indicates quantified. Blank or unknown flags are **not** automatically assumed to be quantified. The value in a censored `*_QC` field must be the actual reporting/detection limit to use it as a censoring bound. If it is a substituted concentration, supply a verified analyte-specific `*_limit` column or update the import. Do not replace limits with zero or half the detection limit.
+
+```{r analyte-long}
+
+# Prepare temporal and hydrologic variables
+# before converting analytes to long format
+
+
+library(tidyverse)
+library(lubridate)
+
+chem <- chem %>%
+  mutate(
+    date = as.Date(date),
+
+    # Continuous time in days since first observation
+    day_num = as.numeric(
+      date - min(date, na.rm = TRUE)
+    ),
+
+    # Day of year
+    doy = yday(date),
+
+    # Seasonal predictors
+    season_sin = sin(2 * pi * doy / 365.25),
+    season_cos = cos(2 * pi * doy / 365.25),
+
+    # (logQ, logP3, flow_type are created in the flow-import chunk)
+
+    # Stream-specific sampling occasion
+    stream_date = interaction(
+      stream_id,
+      date,
+      drop = TRUE
+    ),
+
+    # Sampling event identifier
+    storm_event = if_else(
+      date == as.Date("2024-10-16"),
+      "storm_20241016",
+      NA_character_
+    )
+  )
+
+# Preserve existing sample timestamps if available.
+# Otherwise use the date, without implying an exact time.
+
+if (!"sample_datetime" %in% names(chem)) {
+  chem <- chem %>%
+    mutate(
+      sample_datetime = as.POSIXct(
+        date,
+        tz = "America/Los_Angeles"
+      )
+    )
+}
+
+# Create a unique sample ID if one does not exist
+if (!"sample_id" %in% names(chem)) {
+  chem <- chem %>%
+    mutate(
+      sample_id = paste0(
+        site_lab, "_",
+        format(date, "%Y%m%d"), "_",
+        row_number()
+      )
+    )
+}
+
+# Verify required columns
+required_vars <- c(
+  "row_id", "sample_id", "storm_event",
+  "stream_date", "sample_datetime",
+  "site_lab", "stream_id", "position",
+  "date", "day_num", "doy",
+  "season_sin", "season_cos",
+  "Q_obs", "Q_source", "match_precision",
+  "precip_mm", "ppt_3day",
+  "logQ", "logP3", "flow_type"
+)
+
+missing_vars <- setdiff(required_vars, names(chem))
+if (length(missing_vars)) stop("Missing required columns: ", paste(missing_vars, collapse = ", "))
+
+available <- analytes %>% filter(col %in% names(chem))
+missing <- setdiff(analytes$col,names(chem))
+if (length(missing)) warning("Unavailable analytes: ",paste(missing,collapse=", "))
+long <- purrr::map_dfr(seq_len(nrow(available)),function(j) {
+  a <- available[j,]
+  flag <- if (a$dl_col %in% names(chem))
+    str_to_lower(trimws(as.character(chem[[a$dl_col]]))) else rep(NA_character_,nrow(chem))
+  flag[flag %in% ""] <- NA_character_
+  if (!a$dl_col %in% names(chem) && a$analyte %in% params$assume_quantified)
+    flag <- rep("no", nrow(chem))
+  # If an explicit limit column exists, use it; otherwise use the reported
+  # value ONLY AFTER confirming it represents the detection bound.
+  limit_col <- paste0(a$col,"_limit")
+  limit <- if (limit_col %in% names(chem)) as.numeric(chem[[limit_col]]) else rep(NA_real_,nrow(chem))
+  # No explicit limit column: recover the limit from the QC-substituted value
+  if (all(is.na(limit)) && params$qc_substitution_factor > 0)
+    limit <- if_else(flag %in% "yes", as.numeric(chem[[a$col]]) / params$qc_substitution_factor, NA_real_)
+  chem %>% transmute(
+    row_id,sample_id,storm_event,stream_date,sample_datetime,site_lab,stream_id,position,date,day_num,doy,season_sin,season_cos,
+    Q_obs,Q_source,match_precision,precip_mm,ppt_3day,logQ,logP3,flow_type,
+    analyte=a$analyte,unit=a$unit,to_mg_L=a$to_mg_L,
+    value=as.numeric(.data[[a$col]]),flag=flag,
+    limit=limit,
+    censored=case_when(flag=="yes"~TRUE,flag=="no"~FALSE,TRUE~NA),
+    # A limit is not inferred from QC-substituted values.
+    censor_bound=if_else(flag=="yes",limit,NA_real_)
+  )
+})
+
+
+
+qc <- long %>% group_by(analyte) %>% summarise(
+  n_total=sum(!is.na(value)),
+  n_quantified=sum(censored==FALSE & !is.na(value),na.rm=TRUE),
+  n_censored=sum(censored==TRUE & !is.na(value),na.rm=TRUE),
+  n_unknown_flag=sum(is.na(censored) & !is.na(value)),
+  n_missing_limit=sum(censored==TRUE & (is.na(censor_bound)|censor_bound<=0),na.rm=TRUE),
+  n_Q=sum(!is.na(Q_obs)&!is.na(value)),
+  n_ppt3=sum(!is.na(ppt_3day)&!is.na(value)),
+  n_sites=n_distinct(site_lab[!is.na(value)]),
+  .groups="drop")
+qc <- qc %>% mutate(
+  prop_censored = if_else(n_quantified + n_censored > 0,
+                          n_censored / (n_quantified + n_censored), NA_real_))
+print(kable(qc))
+
+write_csv(qc,file.path(params$output_dir,"analyte_QC_summary.csv"))
+```
+
+## 3. Model specification actually used
+
+```{r spec}
+burned_sites <- site_lookup$site_lab[site_lookup$burned]
+scope_label  <- if (params$burned_only) "burned_only" else "all_sites"
+pred_label   <- if (params$use_discharge) "Q_and_PPT" else "PPT_only"
+out_dir      <- file.path(params$output_dir, paste(scope_label, pred_label, sep = "_"))
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+# Thresholds used to flag models whose posteriors should not be interpreted
+max_rhat_ok <- 1.05
+min_ess_ok  <- 200
+# Which flag decides what is plotted as interpretable:
+#   "reliable"      = R-hat + ESS + no divergent transitions (recommended)
+#   "reliable_rhat" = R-hat + ESS only (divergent transitions are NOT checked)
+reliability_flag <- "reliable"
+cat("Scope:", scope_label, "| predictors:", pred_label, "\nOutputs:", out_dir, "\n")
+
+# Which sites can enter the models? A sample needs every predictor in the model.
+coverage <- long %>% distinct(sample_id, site_lab, logQ, logP3) %>%
+  group_by(site_lab) %>%
+  summarise(n_samples = n(), n_with_Q = sum(!is.na(logQ)), n_with_PPT = sum(!is.na(logP3)),
+            n_usable = sum(!is.na(logP3) & (!params$use_discharge | !is.na(logQ))), .groups = "drop") %>%
+  mutate(in_scope = !params$burned_only | site_lab %in% burned_sites,
+         enters_models = in_scope & n_usable > 0)
+write_csv(coverage, file.path(out_dir, "site_coverage.csv"))
+print(kable(coverage))
+if (any(coverage$in_scope & coverage$n_usable == 0))
+  warning("In-scope sites with no usable rows (missing predictors) are dropped from every model: ",
+          paste(coverage$site_lab[coverage$in_scope & coverage$n_usable == 0], collapse = ", "))
+```
+
+## 4. Fit the censored Bayesian models
+
+```{r bayes-functions}
+fit_bayes <- function(a) {
+  d <- long %>% filter(analyte == a, !is.na(value), !is.na(censored), !is.na(logP3))
+  if (params$use_discharge) d <- d %>% filter(!is.na(logQ))
+  if (params$burned_only)   d <- d %>% filter(site_lab %in% burned_sites)
+  if (any(d$censored & (is.na(d$censor_bound) | d$censor_bound <= 0)))
+    stop("Missing verified censor bounds for ", a)
+  d <- d %>% mutate(
+      censor      = if_else(censored, "left", "none"),
+      y           = if_else(censored, censor_bound, value),
+      ppt_z       = as.numeric(scale(logP3)),
+      q_z         = if (params$use_discharge) as.numeric(scale(logQ)) else NA_real_,
+      stream_date = interaction(stream_id, date, drop = TRUE),
+      site_lab    = factor(site_lab)) %>%
+    filter(!is.na(y), y > 0, is.finite(ppt_z))
+  if (params$use_discharge) d <- d %>% filter(is.finite(q_z))
+  if (nrow(d) < params$min_n || n_distinct(d$site_lab) < 2) {
+    message(a, ": too few rows or sites; not fit"); return(NULL)
+  }
+  rhs <- c("site_lab", if (params$use_discharge) "q_z", "ppt_z", "season_sin", "season_cos")
+  if (any(table(d$stream_date) > 1)) rhs <- c(rhs, "(1 | stream_date)")
+  form <- bf(as.formula(paste("y | cens(censor) ~", paste(rhs, collapse = " + "))))
+  brm(form, data = d, family = lognormal(),
+      prior = c(prior(normal(0, 1), class = "b"), prior(exponential(1), class = "sigma")),
+      chains = params$chains, iter = params$iter,
+      cores = min(params$chains, parallel::detectCores()),
+      seed = 2026, control = list(adapt_delta = params$adapt_delta),
+      refresh = 0, silent = 2)
+}
+```
+
+```{r bayes-fit}
+# Every analyte with known detection flags and verified limits is fit.
+eligible <- qc %>% filter(n_unknown_flag == 0, n_missing_limit == 0) %>% pull(analyte)
+fits <- setNames(lapply(eligible, function(a) {
+  message("Fitting ", a)
+  tryCatch(fit_bayes(a), error = function(e) { message(a, ": ", conditionMessage(e)); NULL })
+}), eligible)
+saveRDS(fits, file.path(out_dir, "bayesian_models.rds"))
+```
+
+## 5. Coefficients and credible intervals (the reported results)
+
+Effects are **multiplicative changes in concentration per one-SD increase** in the predictor (exp of the posterior coefficient), with the `cri` credible interval. `supported` means the interval excludes 1. `reliable` is FALSE when R-hat, effective sample size, or divergent transitions fail the thresholds in the `spec` chunk; do not interpret unreliable rows.
+
+```{r bayes-summary}
+summarise_fit <- function(fit, a) {
+  dr <- posterior::as_draws_df(fit)
+  d  <- fit$data
+  vars <- intersect(c("b_q_z", "b_ppt_z", "sigma", "sd_stream_date__Intercept"),
+                    posterior::variables(dr))
+  dg <- posterior::summarise_draws(posterior::subset_draws(dr, variable = vars),
+                                   rhat = posterior::rhat, ess_bulk = posterior::ess_bulk,
+                                   ess_tail = posterior::ess_tail)
+  stopifnot(all(c("rhat", "ess_bulk", "ess_tail") %in% names(dg)), all(is.finite(dg$rhat)), all(is.finite(dg$ess_bulk)))
+  np <- brms::nuts_params(fit)
+  diag <- tibble(
+    n = nrow(d), n_censored = sum(d$censor == "left"),
+    pct_censored = 100 * mean(d$censor == "left"),
+    rho_Q_PPT = if ("q_z" %in% names(d)) suppressWarnings(cor(d$q_z, d$ppt_z, method = "spearman")) else NA_real_,
+    max_rhat = max(dg$rhat), min_ess_bulk = min(dg$ess_bulk), min_ess_tail = min(dg$ess_tail),
+    divergences = sum(np$Value[np$Parameter == "divergent__"]))
+  get_term <- function(b, label) {
+    q <- unname(quantile(b, c((1 - params$cri) / 2, 1 - (1 - params$cri) / 2)))
+    tibble(term = label, fold = exp(median(b)), lo = exp(q[1]), hi = exp(q[2]),
+           prob_direction = max(mean(b > 0), mean(b < 0)), supported = q[1] > 0 | q[2] < 0)
+  }
+  out <- list()
+  if ("b_q_z" %in% vars) out$q <- get_term(dr$b_q_z, "Streamflow")
+  out$p <- get_term(dr$b_ppt_z, "Precipitation")
+  if ("b_q_z" %in% vars) out$c <- get_term(dr$b_q_z - dr$b_ppt_z, "Streamflow vs precipitation")
+  bind_rows(out) %>% mutate(analyte = a, .before = 1) %>% bind_cols(diag)
+}
+fits_ok <- Filter(Negate(is.null), fits)
+if (!length(fits_ok)) stop("No models were fit; see the messages from the bayes-fit chunk.")
+coef_tab <- purrr::imap_dfr(fits_ok, ~ summarise_fit(.x, .y)) %>%
+  mutate(reliable = max_rhat <= max_rhat_ok & min_ess_bulk >= min_ess_ok & divergences == 0,
+         reliable_rhat = max_rhat <= max_rhat_ok & min_ess_bulk >= min_ess_ok, 
+         scope = scope_label, predictors = pred_label)
+coef_tab <- coef_tab %>% mutate(plot_ok = if (reliability_flag == "reliable") reliable else reliable_rhat)
+write_csv(coef_tab, file.path(out_dir, "bayesian_coefficients.csv"))
+
+coef_tab %>%
+  transmute(analyte, term, effect = sprintf("%.2f", fold),
+            CrI = sprintf("[%.2f, %.2f]", lo, hi), supported, n, pct_censored = round(pct_censored),
+            rhat = round(max_rhat, 3), divergences, reliable) %>%
+  kable()
+```
+
+```{r bayes-plot, echo=F, include= T, fig.width=9, fig.height=7}
+terms_plot <- intersect(c("Streamflow", "Precipitation"), unique(coef_tab$term))
+plot_dat <- coef_tab %>% filter(term %in% terms_plot) %>%
+  mutate(label = sprintf("%s (%d%% cens.)", analyte, round(pct_censored)),
+         term = factor(term, levels = terms_plot))
+ord <- plot_dat %>% filter(term == terms_plot[length(terms_plot)]) %>% arrange(fold) %>% pull(label)
+plot_dat <- plot_dat %>% mutate(label = factor(label, levels = ord))
+
+
+
+# 1. Prepare plotting data
+
+plot_dat <- plot_dat %>%
+  filter(plot_ok==TRUE & pct_censored<70) %>%
+  mutate(
+    term = factor(
+      as.character(term),
+      levels = c("Streamflow", "Precipitation")
+    ),
+
+    plot_ok = factor(
+      as.character(plot_ok),
+      levels = c("TRUE", "FALSE"),
+      labels = c("Reliable", "Unreliable")
+    ),
+
+    # Match fill to term when reliable; white otherwise
+    point_fill = case_when(
+      plot_ok == "Unreliable" ~ "Unreliable",
+      TRUE ~ as.character(term)
+    )
+  )
+
+# Shared position adjustment
+pd <- position_dodge(width = 0.6)
+
+
+# 2. Plot
+
+p <- ggplot(
+  plot_dat,
+  aes(
+    x = fold,
+    y = label,
+    colour = term,
+    shape = term,
+    group = term
+  )
+) +
+
+  geom_vline(
+    xintercept = 1,
+    linetype = "dashed",
+    color = "grey50"
+  ) +
+
+  # Credible intervals colored by term
+  geom_errorbar(
+    aes(
+      xmin = lo,
+      xmax = hi
+    ),
+    orientation = "y",
+    position = pd,
+    width = 0,
+    linewidth = 1.5,
+    alpha = 0.25
+  ) +
+
+  # Points with predictor-specific fill or white fill
+  geom_point(
+    aes(fill = point_fill),
+    position = pd,
+    size = 2.5,
+    stroke = 0.9
+  ) +
+
+  # Circle = Streamflow; Triangle = Precipitation
+  scale_shape_manual(
+    values = c(
+      "Streamflow" = 21,
+      "Precipitation" = 24
+    ),
+    name = "Predictor"
+  ) +
+
+  # Outline and interval colors
+  scale_colour_manual(
+    values = c(
+      "Streamflow" = "#303030",
+      "Precipitation" = "#084594"
+    ),
+    name = "Predictor"
+  ) +
+
+  # Fill colors
+  scale_fill_manual(
+    values = c(
+      "Streamflow" = "#303030",
+      "Precipitation" = "#084594",
+      "Unreliable" = "white"
+    ),
+    name = "Point fill"
+  ) +
+
+  scale_x_log10() +
+
+  labs(
+    x = sprintf(
+      "Change in concentration per 1 SD (median and %d%% CrI)",
+      round(100 * params$cri)
+    ),
+    y = NULL
+  ) +
+
+  guides(
+   # colour = "none",
+    shape = guide_legend(order = 1),
+    fill = guide_legend(order = 2)
+  ) +
+
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+print(p)
+
+
+
+# ggsave(file.path(out_dir, "bayesian_coefficients_MS.png"), p, width = 4.5, height = 7, dpi = 300, bg = "white")
+```
+
+## 6. Record of model run
+
+This table and `bayesian_coefficients.csv` are the single record of the model output being interpreted.
+
+```{r manifest}
+sites_used <- sort(unique(unlist(lapply(fits, function(f) if (!is.null(f)) as.character(f$data$site_lab)))))
+model_spec <- tibble(
+  item = c("scope", "sites_in_models", "predictors", "likelihood", "random_effect", "priors",
+           "chains_x_iter", "adapt_delta", "seed", "interval", "run_date", "brms_version",
+           "chemistry_csv", "hydrology_csv"),
+  value = c(scope_label, paste(sites_used, collapse = ", "), pred_label,
+            "lognormal, left-censored at sample-specific reporting limit",
+            "(1 | stream_date) when same-stream, same-date groups exist",
+            "b ~ Normal(0,1); sigma ~ Exponential(1); brms defaults otherwise",
+            paste(params$chains, "x", params$iter), params$adapt_delta, 2026,
+            paste0(100 * params$cri, "%"), as.character(Sys.Date()),
+            as.character(packageVersion("brms")), params$chemistry_csv, params$hydro_csv))
+write_csv(model_spec, file.path(out_dir, "model_spec.csv"))
+kable(model_spec)
+```
+
+End of scrip.

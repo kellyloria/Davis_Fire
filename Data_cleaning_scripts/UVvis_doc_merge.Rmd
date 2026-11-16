@@ -49,27 +49,45 @@ library(plotly)
 library(readxl)
 library(ggpmisc)
 
+
 site_colors <- c(
   "Ophir" = "#7d5ba6",
-  "Winters" = "#4287f5",
-  "Winters upstream" = "#7fc5f0",
-  "Davis" = "#d9cb7c",
-  "Browns" = "#c94d00", 
-  "Browns sub"  = "#bd772d"
+  "Winters" = "#8b9933",
+  "Winters upstream" = "#b6cf15",
+  "Davis" = "#e2d346",
+  "Browns" = "#117733", 
+  "Browns sub"  = "#10de54"
 )
 
 
 site_lab_colors <- c(
   "ophir" = "#7d5ba6",
     "ophir_hw" = "#7d1ba6",
-  "winters_usgs" = "#4287f5",
-  "winters_up" = "#7fc5f0",
-  "davis" = "#d9cb7c",
-  "browns" = "#c94d00", 
-  "browns_sub"  = "#bd772d",
+  "winters_usgs" = "#8b9933",
+  "winters_up" = "#b6cf15",
+  "davis" = "#e2d346",
+  "browns" = "#117733", 
+  "browns_sub"  = "#10de54",
    "browns_hw"  = "#bd272d"
 )
 
+
+# Creek labels and facet order
+creek_levels <- c(
+  "Browns Creek",
+  "Winters Creek",
+  "Davis Creek",
+  "Ophir Creek"
+)
+
+site_labels <- c(
+  "browns"       = "Browns",
+  "browns_sub"   = "Browns sub.",
+  "winters_usgs" = "Winters USGS",
+  "winters_up"   = "Winters up",
+  "davis"        = "Davis",
+  "ophir"        = "Ophir"
+)
 
 ```
 
@@ -94,22 +112,13 @@ library(dplyr)
 library(stringr)
 
 UVvis_data <- read.csv(
-  "/Users/kellyloria/Documents/DRI/UVvis_Reno/processed_20260723.csv") %>%
-  mutate(date = as.Date(sample_date, format = "%Y-%m-%d"))
+  uvvis_file <- "/Users/kellyloria/Documents/DRI/UVvis_Reno/uvvis_corrected_20261020/processed_optical_metrics.csv") %>%
+  mutate(date = as.Date(sample_date, format = "%m/%d/%y"))
 
-water_chem <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_only_chem_dat_processed.csv") %>%
-    mutate(date = as.Date(date, format = "%Y-%m-%d")) %>%
-    dplyr::select(-TSS)  
+water_chem <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/QAQC_chemistry_TSS/ERDC_water_chem_QAQC_TSS_20261026_small_v2.csv") %>%
+    mutate(date = as.Date(date, format = "%m/%d/%y")) 
   
-
-water_chem_TSS <- read.csv("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Raw_data/TSS_data3.csv") %>%
-    mutate(date = as.Date(Collection_date, format = "%m/%d/%y")) %>%
-  dplyr::select(site,date, TSS.mgL.2)  
-
 UVvis_data <- UVvis_data %>%
-  distinct()
-
-water_chem_TSS <- water_chem_TSS %>%
   distinct()
 
 
@@ -117,29 +126,27 @@ merged_df1 <- water_chem %>%
   left_join(UVvis_data, by = c("date", "site_lab" = "site")) %>%
   mutate(
   burn_lab = case_when(
-      USGS_gage %in% c(
+      site_lab %in% c(
         "browns",
-        "winters",
+        "browns_sub",
+        "winters_usgs",
+        "winters_up",
         "davis"
       ) ~ "burned",
 
-      USGS_gage %in% c(
+      site_lab %in% c(
         "ophir"
       ) ~ "unburned",
 
       TRUE ~ NA_character_
     ))
 
-merged_df2 <- merged_df1 %>%
-  left_join(water_chem_TSS, by = c("date", "site_lab" = "site"))
 
-names(davis_data)
-str(davis_data)
 ```
 
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
 
-merged_calcs <- merged_df2%>%
+merged_calcs <- merged_df1%>%
   mutate(
     Sr = ss_275_295/ss_350_400,
     SUVA_254 = a_254/DOC_QC,
@@ -165,7 +172,7 @@ merged_calcs <- merged_calcs %>%
 
 ### WRITE 
 ## Save data
-# write.csv(merged_calcs, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_report.csv", row.names = FALSE)
+# write.csv(merged_calcs, "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Processes_data/ERDC_water_final_data_20261026.csv", row.names = FALSE)
 
 
 small_df <- merged_calcs%>%
@@ -229,12 +236,73 @@ p1
 
 
 
-```{r, warning=F, size = 'small', echo=FALSE, fig.width=11, fig.height=3}
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=11, fig.height=8}
 
-library(ggplot2)
+# library(ggplot2)
+# 
+# p1 <- small_df %>%
+#    ggplot(
+#     aes(
+#       x = date,
+#       y = cdom,
+#       color = site_lab,
+#       group = site_lab,
+#       shape = burn_lab
+#     )
+#   ) +
+#   geom_line(alpha=0.8) +
+#   geom_point(size = 3, alpha=0.8) +
+#   
+#   # Site colors + clean legend labels
+#   scale_color_manual(
+#     values = site_lab_colors,
+#     labels = function(x) str_replace_all(x, "_", " ")
+#   ) +
+#   
+#   # Clean burn-status labels
+#   scale_shape_discrete(
+#     labels = function(x) str_replace_all(x, "_", " ")
+#   ) +
+#   
+#   labs(
+#     y = expression("CDOM"),
+#     x = NULL,
+#     color = "Site",
+#     shape = "Burn status"
+#   ) +
+#   
+#   scale_x_date(
+#     limits = c(as.Date("2024-11-01"), as.Date("2026-04-15")),
+#     date_breaks = "2 month",
+#     date_labels = "%b-%y"
+#   ) +
+#   
+#   theme_minimal() +
+#   theme(
+#     legend.position = "bottom",
+#     legend.box = "horizontal"
+#   )
+# 
+# p1
 
-p1 <- small_df %>%
-   ggplot(
+
+
+p1 <- merged_calcs %>%
+  filter(!is.na(cdom)) %>%
+  mutate(
+    creek = case_when(
+      site_lab %in% c("browns", "browns_sub") ~ "Browns Creek",
+      site_lab %in% c("winters_usgs", "winters_up") ~ "Winters Creek",
+      site_lab == "davis" ~ "Davis Creek",
+      site_lab == "ophir" ~ "Ophir Creek",
+      TRUE ~ NA_character_
+    ),
+    creek = factor(creek, levels = creek_levels),
+    site_lab = factor(site_lab, levels = names(site_labels))
+  ) %>%
+  filter(!is.na(creek)) %>%
+  arrange(site_lab, date) %>%
+  ggplot(
     aes(
       x = date,
       y = cdom,
@@ -243,40 +311,54 @@ p1 <- small_df %>%
       shape = burn_lab
     )
   ) +
-  geom_line(alpha=0.8) +
-  geom_point(size = 3, alpha=0.8) +
-  
-  # Site colors + clean legend labels
+  geom_line(alpha = 0.8, linewidth = 0.8) +
+  geom_point(size = 3, alpha = 0.8) +
+
   scale_color_manual(
     values = site_lab_colors,
-    labels = function(x) str_replace_all(x, "_", " ")
+    breaks = names(site_labels),
+    labels = site_labels,
+    name = "Site"
   ) +
-  
-  # Clean burn-status labels
+
   scale_shape_discrete(
-    labels = function(x) str_replace_all(x, "_", " ")
+    labels = function(x) str_replace_all(x, "_", " "),
+    name = "Burn status"
   ) +
-  
-  labs(
-    y = expression("CDOM"),
-    x = NULL,
-    color = "Site",
-    shape = "Burn status"
+
+  facet_wrap(
+    ~ creek,
+    ncol = 1,
+    scales = "free_y",
+    drop = TRUE
   ) +
-  
+
   scale_x_date(
-    limits = c(as.Date("2024-11-01"), as.Date("2026-04-15")),
-    date_breaks = "2 month",
+    limits = c(
+      as.Date("2024-10-01"),
+      as.Date("2026-05-15")
+    ),
+    date_breaks = "2 months",
     date_labels = "%b-%y"
   ) +
-  
+
+  labs(
+    y = expression("CDOM"),
+    x = NULL
+  ) +
+
   theme_minimal() +
   theme(
     legend.position = "bottom",
-    legend.box = "horizontal"
+    legend.box = "horizontal",
+    strip.text = element_text(
+      size = 11,
+      face = "bold"
+    )
   )
 
 p1
+  
   
 ```
 
@@ -284,19 +366,79 @@ p1
 
 
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
-# ggsave(plot = p1, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/CDOM_report.png",sep=""),width=7.25,height=3,dpi=300)
+# ggsave(plot = p1, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/CDOM_report_v2.png",sep=""),width=7.5,height=8,dpi=300)
 ```
 
 
 
 
 
-```{r, warning=F, size = 'small', echo=FALSE, fig.width=11, fig.height=3}
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=11, fig.height=8}
 
 library(ggplot2)
+# 
+# p2 <- small_df %>%
+#    ggplot(
+#     aes(
+#       x = date,
+#       y = SUVA_254,
+#       color = site_lab,
+#       group = site_lab,
+#       shape = burn_lab
+#     )
+#   ) +
+#   geom_line(alpha=0.8) +
+#   geom_point(size = 3, alpha=0.8) +
+#   
+#   # Site colors + clean legend labels
+#   scale_color_manual(
+#     values = site_lab_colors,
+#     labels = function(x) str_replace_all(x, "_", " ")
+#   ) +
+#   
+#   # Clean burn-status labels
+#   scale_shape_discrete(
+#     labels = function(x) str_replace_all(x, "_", " ")
+#   ) +
+#   
+#   labs(
+#     y = expression("SUVA"[254]),
+#     x = NULL,
+#     color = "Site",
+#     shape = "Burn status"
+#   ) +
+#   
+#   scale_x_date(
+#     limits = c(as.Date("2024-11-01"), as.Date("2026-04-15")),
+#     date_breaks = "2 month",
+#     date_labels = "%b-%y"
+#   ) +
+#   
+#   theme_minimal() +
+#   theme(
+#     legend.position = "bottom",
+#     legend.box = "horizontal"
+#   )
+# 
+# p2
 
-p2 <- small_df %>%
-   ggplot(
+
+p2 <- merged_calcs %>%
+  filter(!is.na(SUVA_254)) %>%
+  mutate(
+    creek = case_when(
+      site_lab %in% c("browns", "browns_sub") ~ "Browns Creek",
+      site_lab %in% c("winters_usgs", "winters_up") ~ "Winters Creek",
+      site_lab == "davis" ~ "Davis Creek",
+      site_lab == "ophir" ~ "Ophir Creek",
+      TRUE ~ NA_character_
+    ),
+    creek = factor(creek, levels = creek_levels),
+    site_lab = factor(site_lab, levels = names(site_labels))
+  ) %>%
+  filter(!is.na(creek)) %>%
+  arrange(site_lab, date) %>%
+  ggplot(
     aes(
       x = date,
       y = SUVA_254,
@@ -305,59 +447,85 @@ p2 <- small_df %>%
       shape = burn_lab
     )
   ) +
-  geom_line(alpha=0.8) +
-  geom_point(size = 3, alpha=0.8) +
-  
-  # Site colors + clean legend labels
+  geom_line(alpha = 0.8, linewidth = 0.8) +
+  geom_point(size = 3, alpha = 0.8) +
+
   scale_color_manual(
     values = site_lab_colors,
-    labels = function(x) str_replace_all(x, "_", " ")
+    breaks = names(site_labels),
+    labels = site_labels,
+    name = "Site"
   ) +
-  
-  # Clean burn-status labels
+
   scale_shape_discrete(
-    labels = function(x) str_replace_all(x, "_", " ")
+    labels = function(x) str_replace_all(x, "_", " "),
+    name = "Burn status"
   ) +
-  
-  labs(
-    y = expression("SUVA"[254]),
-    x = NULL,
-    color = "Site",
-    shape = "Burn status"
+
+  facet_wrap(
+    ~ creek,
+    ncol = 1,
+    scales = "free_y",
+    drop = TRUE
   ) +
-  
+
   scale_x_date(
-    limits = c(as.Date("2024-11-01"), as.Date("2026-04-15")),
-    date_breaks = "2 month",
+    limits = c(
+      as.Date("2024-10-01"),
+      as.Date("2026-05-15")
+    ),
+    date_breaks = "2 months",
     date_labels = "%b-%y"
   ) +
-  
+
+  labs(
+    y = expression("SUVA"[254]),
+    x = NULL
+  ) +
+
   theme_minimal() +
   theme(
     legend.position = "bottom",
-    legend.box = "horizontal"
+    legend.box = "horizontal",
+    strip.text = element_text(
+      size = 11,
+      face = "bold"
+    )
   )
 
 p2
+  
   
 ```
 
 
 
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
-# ggsave(plot = p2, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/SUVA254_report.png",sep=""),width=7.25,height=3,dpi=300)
+# ggsave(plot = p2, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/SUVA254_report_v2.png",sep=""),width=7.5,height=8,dpi=300)
 ```
 
 
 
 
 
-```{r, warning=F, size = 'small', echo=FALSE, fig.width=11, fig.height=3}
+```{r, warning=F, size = 'small', echo=FALSE, fig.width=11, fig.height=8}
 
-library(ggplot2)
-
-p3 <- small_df %>%
-   ggplot(
+p3 <- merged_calcs %>%
+  filter(!is.na(BC_QC)) %>%
+  mutate(
+    creek = case_when(
+      site_lab %in% c("browns", "browns_sub") ~ "Browns Creek",
+      site_lab %in% c("winters_usgs", "winters_up") ~ "Winters Creek",
+      site_lab == "davis" ~ "Davis Creek",
+      site_lab == "ophir" ~ "Ophir Creek",
+      TRUE ~ NA_character_
+    ),
+    creek = factor(creek, levels = creek_levels),
+    site_lab = factor(site_lab, levels = names(site_labels))
+  ) %>%
+  filter(!is.na(creek)) %>%
+  arrange(site_lab, date) %>%
+  ggplot(
     aes(
       x = date,
       y = BC_QC,
@@ -366,37 +534,50 @@ p3 <- small_df %>%
       shape = burn_lab
     )
   ) +
-  geom_line(alpha=0.8) +
-  geom_point(size = 3, alpha=0.8) +
-  
-  # Site colors + clean legend labels
+  geom_line(alpha = 0.8, linewidth = 0.8) +
+  geom_point(size = 3, alpha = 0.8) +
+
   scale_color_manual(
     values = site_lab_colors,
-    labels = function(x) str_replace_all(x, "_", " ")
+    breaks = names(site_labels),
+    labels = site_labels,
+    name = "Site"
   ) +
-  
-  # Clean burn-status labels
+
   scale_shape_discrete(
-    labels = function(x) str_replace_all(x, "_", " ")
+    labels = function(x) str_replace_all(x, "_", " "),
+    name = "Burn status"
   ) +
-  
-  labs(
-    y = expression("rBC"),
-    x = NULL,
-    color = "Site",
-    shape = "Burn status"
+
+  facet_wrap(
+    ~ creek,
+    ncol = 1,
+    scales = "free_y",
+    drop = TRUE
   ) +
-  
+
   scale_x_date(
-    limits = c(as.Date("2024-11-01"), as.Date("2026-04-15")),
-    date_breaks = "2 month",
+    limits = c(
+      as.Date("2024-10-01"),
+      as.Date("2026-05-15")
+    ),
+    date_breaks = "2 months",
     date_labels = "%b-%y"
   ) +
-  
+
+  labs(
+    y = "rBC",
+    x = NULL
+  ) +
+
   theme_minimal() +
   theme(
     legend.position = "bottom",
-    legend.box = "horizontal"
+    legend.box = "horizontal",
+    strip.text = element_text(
+      size = 11,
+      face = "bold"
+    )
   )
 
 p3
@@ -405,8 +586,29 @@ p3
 
 
 ```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
-# ggsave(plot = p3, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/BC_report.png",sep=""),width=7.25,height=3,dpi=300)
+# ggsave(plot = p3, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/BC_report.png",sep=""),width=7.5,height=8,dpi=300)
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

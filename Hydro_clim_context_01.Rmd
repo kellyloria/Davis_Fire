@@ -1,0 +1,1026 @@
+---
+title: "ERDC Davis Fire MS"
+subtitle: "Figures 2–4: Hydroclimate, storms, and water quality"
+author: "K. Loria"
+date: "`r Sys.Date()`"
+output:
+  github_document:
+    toc: true
+    toc_depth: 3
+    html_preview: false
+always_allow_html: true
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+# 1. R Markdown settings
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  error = FALSE,
+  fig.width = 7,
+  fig.height = 3,
+  fig.retina = 2,
+  out.width = "80%",
+  dpi = 300
+)
+
+# 2. Package dependencies
+# Data import and manipulation
+library(tidyverse)
+library(lubridate)
+library(here)
+library(readxl)
+library(dataRetrieval)
+
+# Time series and statistical analyses
+library(zoo)
+library(slider)
+library(broom)
+library(rlang)
+
+# Data visualization
+library(viridis)
+library(cowplot)
+library(ggpubr)
+library(ggpmisc)
+library(patchwork)
+library(plotly)
+
+# Tables and reporting
+library(knitr)
+library(kableExtra)
+
+# 3. Relative directory paths
+data_dir <- here::here("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Dryad_data")
+
+# Check that required input files exist
+stopifnot(
+  file.exists(file.path(data_dir, "DFMS_water_quality_data_2026.csv")),
+  file.exists(file.path(data_dir, "DFMS_hydro_clim_WY2024_2026.csv"))
+)
+
+# Local time zone for sampling observations
+local_tz <- "America/Los_Angeles"
+```
+
+## Shared analysis parameters
+
+```{r analysis-parameters}
+# Site colors, labels, and plotting order
+
+site_colors <- c(
+  "Ophir" = "#7d5ba6",
+  "Winters" = "#8b9933",
+  "Winters upstream" = "#b6cf15",
+  "Davis" = "#e2d346",
+  "Browns" = "#117733",
+  "Browns sub" = "#10de54"
+)
+
+site_lab_colors <- c(
+  "ophir" = "#7d5ba6",
+  "ophir_hw" = "#7d1ba6",
+  "winters_usgs" = "#8b9933",
+  "winters_up" = "#b6cf15",
+  "davis" = "#e2d346",
+  "browns" = "#117733",
+  "browns_sub" = "#10de54"
+)
+
+creek_levels <- c(
+  "Browns Creek",
+  "Winters Creek",
+  "Davis Creek",
+  "Ophir Creek"
+)
+
+site_labels <- c(
+  "browns" = "Browns",
+  "browns_sub" = "Browns sub.",
+  "winters_usgs" = "Winters USGS",
+  "winters_up" = "Winters up",
+  "davis" = "Davis",
+  "ophir" = "Ophir"
+)
+
+site_shapes <- c(
+  "ophir" = 16,
+  "ophir_hw" = 17,
+  "winters_usgs" = 16,
+  "winters_up" = 17,
+  "davis" = 16,
+  "browns" = 16,
+  "browns_sub" = 15,
+  "browns_hw" = 17
+)
+
+# Davis Fire containment date
+ref_date <- as.Date("2024-09-25")
+```
+
+## Helper functions
+
+```{r helper-functions}
+# Assign water year (October 1 – September 30)
+water_year <- function(data) {
+  data %>%
+    mutate(
+      date = as.Date(date),
+      WaterYear = if_else(
+        month(date) >= 10,
+        year(date) + 1L,
+        year(date)
+      )
+    )
+}
+```
+
+## Import input datasets
+
+```{r load-water-quality}
+# Water quality observations
+WC_dat <- read.csv(
+  file.path(data_dir, "DF_water_quality_data_2026.csv")
+) %>%
+  mutate(
+    datetime = ymd_hms(datetime, tz = "UTC"),
+    datetime = with_tz(datetime, tzone = local_tz),
+    date = as.Date(datetime, tz = local_tz),
+    year = year(datetime),
+    mon = month(datetime),
+    jday = yday(datetime),
+    burn_lab = case_when(
+      site_lab == "ophir" ~ "unburned",
+      site_lab %in% c(
+        "davis",
+        "winters_usgs",
+        "winters_up",
+        "browns",
+        "browns_sub"
+      ) ~ "burn",
+      TRUE ~ NA_character_
+    )
+  )
+```
+
+```{r load-hydroclimate}
+# Daily discharge and precipitation observations
+df_hydro <- read.csv(
+  file.path(data_dir, "hydro_clim_WY2024_2026.csv")
+) %>%
+  mutate(
+    date = as.Date(date, format = "%Y-%m-%d")
+  )
+```
+
+## I. Characterize hydroclimate conditions
+
+- How do sampling events reflect baseflow or runoff conditions?
+- When did the largest transport events occur at each site?
+
+### Figure 2. Streamflow, precipitation, and sampling timing
+
+### Runoff and sampling timing as streamflow, sample dates, and ppt 
+
+```{r, warning=F, size = 'small', echo=F, fig.width=9, fig.height=6.25}
+# 1. Plot settings
+
+plot_start <- as.Date("2024-09-05")
+plot_end   <- as.Date("2026-05-15")
+
+site_order <- c(
+  "winters_usgs",
+  "davis",
+  "ophir"
+)
+
+site_labs <- c(
+  winters_usgs = "Winters USGS",
+  davis = "Davis",
+  ophir = "Ophir"
+)
+
+catchment_area_lookup <- tibble(
+  site = c("winters_usgs", "davis", "ophir"),
+  catchment_area = c(5.4, 4.3, 50.1)
+)
+
+# Functional-flow colors
+flow_colors <- c(
+  wet_season_baseflow = "#878787",
+  dry_season_baseflow = "#878787",
+  spring_recession_flow = "#009E73",
+  peak_flow = "#303030",
+  runoff = "#56B4E9"
+)
+
+flow_labels <- c(
+  wet_season_baseflow = "Wet-season baseflow",
+  dry_season_baseflow = "Dry-season low flow",
+  spring_recession_flow = "Spring recession",
+  peak_flow = "Peak flow",
+  runoff = "Runoff"
+)
+
+# 2. Prepare plotting data
+
+df_plot <- df_hydro %>%
+  mutate(
+    site = as.character(site),
+    date = as.Date(date)
+  ) %>%
+  filter(
+    site %in% site_order,
+    between(date, plot_start, plot_end)
+  ) %>%
+  left_join(catchment_area_lookup, by = "site") %>%
+  mutate(
+    site = factor(site, levels = site_order),
+    flow_norm = Q / catchment_area,
+
+    flow_class = case_when(
+      functional_component %in% c(
+        "fall_pulse_flow",
+        "dry_season_runoff",
+        "other_runoff"
+      ) ~ "runoff",
+      TRUE ~ functional_component
+    )
+  )
+
+# 3. Sampling observations
+
+# Create sampling observation keys
+test_keys <- WC_dat %>%
+  transmute(
+    site = as.character(site_lab),
+    date = as.Date(date),
+    est_obs = "yes"
+  ) %>%
+  distinct(site, date, .keep_all = TRUE)
+
+# Remove existing est_obs and join sampling dates
+df_plot <- df_plot %>%
+  select(-any_of("est_obs")) %>%
+  mutate(
+    site = tolower(trimws(site)),
+    date = as.Date(date)
+  ) %>%
+  left_join(
+    test_keys,
+    by = c("site", "date")
+  ) %>%
+  mutate(
+    est_obs = coalesce(est_obs, "no")
+  )
+
+# 4. Build colored hydrograph segments
+flow_lines <- df_plot %>%
+  arrange(site, date) %>%
+  group_by(site) %>%
+  mutate(
+    next_date = lead(date),
+    next_flow = lead(flow_norm)
+  ) %>%
+  ungroup() %>%
+  filter(
+    !is.na(flow_norm),
+    !is.na(next_flow),
+    !is.na(flow_class),
+    as.integer(next_date - date) == 1L
+  )
+
+# 5. Precipitation scaling
+
+# Precipitation scale: 0 mm at top, 60 mm at bottom.
+# Bars occupy the upper 25% of each panel, as in
+# the original figure.
+
+ppt_max <- 90
+ppt_fraction <- 0.5
+
+# 6. Function to plot an individual site
+
+make_site_plot <- function(site_name) {
+
+  site_df <- df_plot %>%
+    filter(as.character(site) == site_name)
+
+  site_lines <- flow_lines %>%
+    filter(as.character(site) == site_name)
+
+  # Independent discharge scale for each site
+  site_Qmax <- max(site_df$flow_norm, na.rm = TRUE)
+
+  if (!is.finite(site_Qmax) || site_Qmax <= 0) {
+    site_Qmax <- 1
+  }
+
+  Q_top <- site_Qmax * 1.5
+
+  # Precipitation transformation
+  ppt_scale <- Q_top * ppt_fraction / ppt_max
+
+  site_df <- site_df %>%
+    mutate(
+      PPT_ymax = Q_top,
+      PPT_ymin = Q_top - precip_mm * ppt_scale
+    )
+
+  # Build site-specific panel
+  p <- ggplot() +
+
+    # Precipitation bars
+    geom_rect(
+      data = site_df %>%
+        filter(!is.na(precip_mm), precip_mm > 0),
+      aes(
+        xmin = date - 0.75,
+        xmax = date + 0.75,
+        ymin = PPT_ymin,
+        ymax = PPT_ymax,
+        fill = precip_mm
+      ),
+      alpha = 0.95
+    ) +
+
+    scale_fill_gradient(
+      low = "#D6EAF8",
+      high = "#084594",
+      limits = c(0, ppt_max),
+      oob = scales::squish,
+      name = "Daily precipitation (mm)"
+    ) +
+
+    # Colored hydrograph
+    geom_segment(
+      data = site_lines,
+      aes(
+        x = date,
+        xend = next_date,
+        y = flow_norm,
+        yend = next_flow,
+        color = flow_class
+      ),
+      linewidth = 0.9,
+      lineend = "round"
+    ) +
+
+    scale_color_manual(
+      values = flow_colors,
+      labels = flow_labels,
+      name = "Functional flow",
+      na.translate = FALSE
+    ) +
+
+    # Sampling observations
+    geom_point(
+      data = site_df %>%
+        filter(est_obs == "yes", !is.na(flow_norm)),
+      aes(
+        x = date,
+        y = flow_norm
+      ),
+      shape = 4,
+      color = "black",
+      size = 0.75,
+      stroke = 1
+    ) +
+
+    # Fire containment
+    geom_vline(
+      xintercept = as.Date("2024-09-25"),
+      linetype = "dashed",
+      linewidth = 0.5
+    ) +
+
+    # Site label
+    facet_grid(
+      site ~ .,
+      labeller = labeller(
+        site = as_labeller(site_labs)
+      )
+    ) +
+
+    scale_x_date(
+      limits = c(plot_start, plot_end),
+      date_breaks = "2 months",
+      date_labels = "%b-%y",
+      expand = c(0, 0)
+    ) +
+
+    scale_y_continuous(
+      name = NULL, #expression( Catchment~normalized~discharge~(m^3~s^-1~km^-2)),
+      limits = c(0, Q_top),
+
+      # Right-hand precipitation axis
+      sec.axis = sec_axis(
+        trans = ~ (Q_top - .) / ppt_scale,
+        name = "Daily precipitation (mm)",
+        breaks = c(0, 20, 40, 60, 80)
+      ),
+
+      expand = c(0, 0)
+    ) +
+
+    labs(x = "Date") +
+
+    theme_classic(base_size = 11) +
+
+    theme(
+      strip.background = element_rect(
+        fill = "grey90",
+        color = "grey50"
+      ),
+      strip.text = element_text(face = "bold"),
+      panel.spacing = grid::unit(0.6, "lines")
+    )
+
+  return(p)
+}
+
+# 7. Generate plots in latitude order
+
+p_winters <- make_site_plot("winters_usgs")
+p_davis   <- make_site_plot("davis")
+p_ophir   <- make_site_plot("ophir")
+
+# 8. Combine panels
+
+Baseflowplot <- (
+  p_winters /
+  p_davis /
+  p_ophir
+) +
+  plot_layout(
+    heights = c(1, 1, 1),
+    guides = "collect"
+  ) &
+  theme(
+    legend.position = "right"
+  )
+
+Baseflowplot
+
+```
+
+```{r, echo=FALSE, include =F}
+# ggsave(plot = Baseflowplot, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/baseflow_plot_v4.png",sep=""),width=8.25,height=6,dpi=300)
+
+```
+
+### Look at largest flow events:
+
+```{r, warning=F, echo=FALSE, include=T}
+largest_runoff_events <- df_hydro %>%
+  filter(!is.na(Q)) %>%
+  group_by(site, water_year) %>%
+  slice_max(order_by = Q, n = 2, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(
+    site, water_year, date,
+    Q, precip_mm, ppt_3day,
+    functional_component
+  ) %>%
+  arrange(site, water_year)
+
+largest_runoff_events
+
+```
+
+### Look at largest pp† events:
+
+
+```{r, warning=F, echo=FALSE, include=T}
+largest_ppt_events <- df_hydro %>%
+  group_by(site, water_year) %>%
+  slice_max(order_by = precip_mm, n = 2, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(
+    site, water_year, date,
+    Q, precip_mm, ppt_3day,
+    functional_component
+  ) %>%
+  arrange(site, water_year)
+
+largest_ppt_events
+
+```
+
+
+### baseflow transition?
+
+```{r, warning=F, echo=FALSE, include=T}
+
+# 1. Calculate mean September discharge by site/year
+
+september_flow <- df_hydro %>%
+  filter(month(date) == 9) %>%
+  group_by(site, water_year) %>%
+  summarise(
+    sept_mean_Q = if (all(is.na(Q))) NA_real_ else mean(Q, na.rm = TRUE),
+    n_sept_days = sum(!is.na(Q)),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    low_flow_min = sept_mean_Q * 0.25,
+    low_flow_max = sept_mean_Q * 1.75
+  )
+
+
+# 2. Identify first April–August day within 25%
+#    of September mean discharge
+
+dry_season_onset <- df_hydro %>%
+  left_join(
+    september_flow,
+    by = c("site", "water_year")
+  ) %>%
+  filter(
+    month(date) >= 4,
+    month(date) <= 8,
+    !is.na(Q),
+    !is.na(sept_mean_Q),
+    Q <= low_flow_max
+  ) %>%
+  group_by(site, water_year) %>%
+  slice_min(
+    order_by = date,
+    n = 1,
+    with_ties = FALSE
+  ) %>%
+  ungroup() %>%
+  transmute(
+    site,
+    water_year,
+    dry_season_onset = date,
+    onset_DOY = yday(date),
+    onset_Q = Q,
+    sept_mean_Q,
+    low_flow_min,
+    low_flow_max,
+    functional_component
+  ) %>%
+  arrange(site, water_year)
+
+dry_season_onset
+```
+
+Only valid for sites with USGS gages. 
+
+
+## II.  Differences in solute concentrations 
+
+
+
+### Catchment water quality differences 
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+
+ref_date <- as.Date("2024-09-25")
+
+
+df_WQ_plot <- WC_dat %>%
+    mutate(stream_type = case_when(
+    stream_lab== "davis" ~ "e",
+    stream_lab== "ophir" ~ "p",
+    stream_lab == "winters" ~ "p",
+    stream_lab == "browns" ~ "p")) %>%
+  mutate(
+    tsf = as.integer(difftime(datetime, ref_date, units = "days"))
+  ) 
+
+```
+
+```{r, echo=FALSE, include=FALSE}
+
+# 1. Site order and labels
+
+site_order <- c(
+  "browns_sub",
+  "browns",
+  "winters_up",
+  "winters_usgs",
+  "davis",
+  "ophir"
+)
+
+site_labels <- c(
+  browns_sub   = "Sub",
+  browns       = "Browns",
+  winters_up   = "Up",
+  winters_usgs = "USGS",
+  davis        = "Davis",
+  ophir        = "Ophir"
+)
+
+stream_labels <- c(
+  browns_sub   = "Browns",
+  browns       = "Browns",
+  winters_up   = "Winters",
+  winters_usgs = "Winters",
+  davis        = "Davis",
+  ophir        = "Ophir"
+)
+
+# --------------------------------------------------
+# 2. Revised boxplot function
+# --------------------------------------------------
+
+wq_boxplot <- function(
+    data,
+    y,
+    y_lab,
+    hline = NULL,
+    filter_expr = NULL,
+    site_colors = NULL,
+    add_anova = TRUE,
+    anova_label_digits = 2,
+    show_all_p = FALSE
+) {
+
+  yq <- enquo(y)
+  filterq <- enquo(filter_expr)
+  y_name <- as_name(yq)
+
+
+# Prepare data
+  pdat <- data
+
+  if (!quo_is_null(filterq)) {
+    pdat <- pdat %>%
+      filter(!!filterq)
+  }
+
+  pdat <- pdat %>%
+    mutate(
+      site_lab = tolower(trimws(site_lab)),
+
+      stream = recode(
+        site_lab,
+        !!!stream_labels,
+        .default = NA_character_
+      ),
+
+      reach = factor(
+        site_lab,
+        levels = site_order,
+        labels = unname(site_labels[site_order])
+      ),
+
+      stream = factor(
+        stream,
+        levels = c("Browns", "Winters", "Davis", "Ophir")
+      )
+    ) %>%
+    filter(
+      !is.na(stream),
+      !is.na(reach),
+      !is.na(!!yq)
+    )
+
+
+# optional- ANOVA comparing STREAMS
+  anova_text <- NULL
+
+  if (add_anova) {
+
+    adata <- pdat %>%
+      mutate(
+        .y_num = as.numeric(!!yq),
+        .stream = droplevels(stream)
+      ) %>%
+      filter(is.finite(.y_num))
+
+    if (
+      nrow(adata) >= 3 &&
+      n_distinct(adata$.stream) >= 2
+    ) {
+
+      fit <- aov(.y_num ~ .stream, data = adata)
+
+      sm <- summary(fit)[[1]]
+
+      Fv <- sm[["F value"]][1]
+      df1 <- sm[["Df"]][1]
+      df2 <- sm[["Df"]][2]
+      pv <- sm[["Pr(>F)"]][1]
+
+      # Show all p-values or only p < 0.09
+      if (!is.na(pv) && (show_all_p || pv < 0.07)) {
+
+        fmt_p <- if (pv < 0.001) {
+          "p < 0.001"
+        } else {
+          paste0("p = ", signif(pv, 2))
+        }
+
+        anova_text <- paste0(
+          "ANOVA (stream)\n",
+          "F(", df1, ", ", df2, ") = ",
+          round(Fv, anova_label_digits), ", ",
+          #"\n",
+          fmt_p
+        )
+      }
+    }
+  }
+
+# Plot reaches within stream facets
+  p <- ggplot(
+    pdat,
+    aes(
+      x = reach,
+      y = !!yq,
+      fill = reach
+    )
+  ) +
+    geom_boxplot(
+      width = 0.5,
+      alpha = 0.95,
+      na.rm = TRUE
+    ) +
+    facet_grid(
+      ~ stream,
+      scales = "free_x",
+      space = "free_x"
+    ) +
+    scale_x_discrete(drop = TRUE) +
+    labs(
+      x = NULL,
+      y = y_lab,
+      fill = "Reach"
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      strip.text = element_text(
+        face = "bold",
+        size = 11
+      ),
+      panel.grid.minor = element_blank(),
+      legend.position = "none",
+      panel.spacing.x = grid::unit(0.5, "lines")
+    )
+
+  # Optional colors
+  if (!is.null(site_colors)) {
+
+    # Accept colors named by site_lab
+    if (all(site_order %in% names(site_lab_colors))) {
+      names(site_lab_colors) <- unname(
+        site_labels[names(site_lab_colors)]
+      )
+    }
+
+    p <- p +
+      scale_fill_manual(
+        values = site_lab_colors
+      )
+  }
+
+  # Optional reference line
+  if (!is.null(hline)) {
+    p <- p +
+      geom_hline(
+        yintercept = hline,
+        linetype = "dashed"
+      )
+  }
+
+  # Add stream-level ANOVA annotation
+
+  # if (!is.null(anova_text)) {
+  # 
+  #   p <- p +
+  #     labs(
+  #       subtitle = anova_text
+  #     )
+  # }
+
+  return(p)
+}
+
+```
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+
+DOC_plot <- wq_boxplot(df_WQ_plot%>%filter(DOC_QC<20), DOC_QC, expression(DOC~(mg~L^-1)), hline = 0.1, site_colors = site_colors)
+TOC_plot <- wq_boxplot(df_WQ_plot%>%filter(TOC_QC<20), TOC_QC, expression(TOC~(mg~L^-1)), hline = 0.1, site_colors = site_colors)
+TDN_plot <- wq_boxplot(df_WQ_plot, TDN_QC, expression(TDN~(mg~L^-1)), hline = 0.01, site_colors = site_colors)
+NO3_plot <- wq_boxplot(df_WQ_plot, NO3.N_QC, expression(NO[3]~(mg~L^-1)), hline = 0.1, site_colors = site_colors)
+NH4_plot <- wq_boxplot(df_WQ_plot, NH4.N_QC, expression(NH[4]~(mg~L^-1)), hline = 0.1, site_colors = site_colors)
+PO4_plot <- wq_boxplot(df_WQ_plot, PO4.P_QC, expression(PO[4]~(mu*g~L^-1)), hline = 0.01, site_colors = site_colors)
+TSS_plot <- wq_boxplot(df_WQ_plot%>%filter(TSS_QC<500), TSS_QC, expression(TSS~(mg~L^-1)), site_colors = site_colors)
+
+```
+
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+
+Al_plot  <- wq_boxplot(df_WQ_plot, Al_QC, expression(Al~(mu*g~L^-1)),  hline = 1,  site_colors = site_colors)
+As_plot  <- wq_boxplot(df_WQ_plot, As_QC, expression(As~(mu*g~L^-1)),  hline = 0.1,  site_colors = site_colors)
+B_plot  <- wq_boxplot(df_WQ_plot%>%filter(B_QC<50), B_QC, expression(B~(mu*g~L^-1)),  hline = 1,  site_colors = site_colors)
+Ba_plot  <- wq_boxplot(df_WQ_plot, Ba_QC, expression(Ba~(mu*g~L^-1)),  hline = 1,  site_colors = site_colors)
+Ca_plot  <- wq_boxplot(df_WQ_plot, Ca_QC, expression(Ca~(mu*g~L^-1)),  hline = 10,  site_colors = site_colors)
+Cr_plot  <- wq_boxplot(df_WQ_plot, Cr_QC, expression(Cr~(mu*g~L^-1)),  hline = 0.1,  site_colors = site_colors)
+Fe_plot  <- wq_boxplot(df_WQ_plot, Fe_QC, expression(Fe~(mu*g~L^-1)),  hline = 1,  site_colors = site_colors)
+Mn_plot  <- wq_boxplot(df_WQ_plot%>%filter(Mn_QC<150), Mn_QC, expression(Mn~(mu*g~L^-1)),  hline = 0.1,  site_colors = site_colors)
+Pb_plot  <- wq_boxplot(df_WQ_plot, Pb_QC, expression(Pb~(mu*g~L^-1)),  hline = 0.1,  site_colors = site_colors)
+Sr_plot  <- wq_boxplot(df_WQ_plot, Sr_QC, expression(Sr~(mu*g~L^-1)),  hline = 0.1,  site_colors = site_colors)
+Zn_plot  <- wq_boxplot(df_WQ_plot, Zn_QC, expression(Zn~(mu*g~L^-1)),  hline = 0.1,  site_colors = site_colors)
+
+
+```
+
+
+
+#### Boxplot of solutes
+
+```{r, warning=F, size = 'small', echo=FALSE, include=FALSE}
+
+legend <- get_legend(
+  TSS_plot + theme(legend.position = "bottom")
+)
+
+plots <- lapply(
+  list(
+    TSS_plot, DOC_plot, TOC_plot,
+    TDN_plot, NO3_plot, PO4_plot,
+    Al_plot, Ba_plot, Ca_plot,
+    Fe_plot, Mn_plot, Sr_plot
+  ),
+  function(p) p + theme(legend.position = "none")
+)
+
+
+legend_plot <- as_ggplot(legend)
+
+```
+
+
+```{r,  fig.width=12, fig.height=12, out.width="85%", echo=F}
+
+WC_grid_bp <- ggarrange(
+  plotlist = c(plots, list(legend_plot)),
+  ncol = 2,
+  nrow = 7,
+    labels = letters[1:12],   # A–K
+  label.x = 0.08,           # left
+  label.y = 0.98,           # top
+  hjust = 0,
+  vjust = 1,
+  font.label = list(size = 12, face = "bold")
+)
+
+WC_grid_bp
+
+```
+
+```{r, echo=FALSE, include =F}
+# ggsave(plot = WC_grid_bp, filename = paste("/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Figures/Nuts_concentrations_boxplot_grid_plot_v4.png",sep=""),width=7.15,height=13,dpi=300)
+
+```
+
+### Suppporting info table
+
+Water chemistry mean, median, range
+
+```{r, echo=F, include=T}
+
+# 1. Define analytes and units
+analyte_info <- tribble(
+  ~variable,   ~analyte, ~units,
+  "DOC_QC",     "DOC",    "mg/L",
+  "TOC_QC",     "TOC",    "mg/L",
+  "TDN_QC",     "TDN",    "mg/L",
+  "NO3.N_QC",   "NO₃-N",  "mg/L",
+  "NH4.N_QC",   "NH₄-N",  "mg/L",
+  "PO4.P_QC",   "PO₄-P",  "mg/L",
+  "TSS_QC",     "TSS",    "mg/L",
+  "Al_QC",      "Al",     "µg/L",
+  "As_QC",      "As",     "µg/L",
+  "B_QC",       "B",      "µg/L",
+  "Ba_QC",      "Ba",     "µg/L",
+  "Ca_QC",      "Ca",     "µg/L",
+  "Cr_QC",      "Cr",     "µg/L",
+  "Fe_QC",      "Fe",     "µg/L",
+  "Mn_QC",      "Mn",     "µg/L",
+  "Pb_QC",      "Pb",     "µg/L",
+  "Sr_QC",      "Sr",     "µg/L",
+  "Zn_QC",      "Zn",     "µg/L"
+)
+
+# 2. Define site labels and order
+site_labels <- c(
+  "browns_sub"   = "Browns sub.",
+  "browns"       = "Browns",
+  "winters_up"   = "Winters up.",
+  "winters_usgs" = "Winters USGS",
+  "davis"        = "Davis",
+  "ophir"        = "Ophir"
+)
+
+
+# 3. Total sample count by site
+site_counts <- WC_dat %>%
+  filter(site_lab %in% names(site_labels)) %>%
+  group_by(site_lab) %>%
+  summarise(
+    n_site = n(),
+    .groups = "drop"
+  )
+
+
+# 4. Convert chemistry data to long format
+chem_long <- WC_dat %>%
+  filter(site_lab %in% names(site_labels)) %>%
+  select(site_lab, all_of(analyte_info$variable)) %>%
+  pivot_longer(
+    cols = all_of(analyte_info$variable),
+    names_to = "variable",
+    values_to = "concentration"
+  ) %>%
+  left_join(analyte_info, by = "variable")
+
+
+# 5. Summarize each analyte by site
+chem_summary <- chem_long %>%
+  group_by(site_lab, analyte, units) %>%
+  summarise(
+    n_analyte = sum(!is.na(concentration)),
+    mean = if (all(is.na(concentration))) NA_real_
+           else mean(concentration, na.rm = TRUE),
+    median = if (all(is.na(concentration))) NA_real_
+             else median(concentration, na.rm = TRUE),
+    min = if (all(is.na(concentration))) NA_real_
+          else min(concentration, na.rm = TRUE),
+    max = if (all(is.na(concentration))) NA_real_
+          else max(concentration, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  left_join(site_counts, by = "site_lab") %>%
+  mutate(
+    site = recode(site_lab, !!!site_labels),
+    site = factor(site, levels = unname(site_labels)),
+    analyte = factor(
+      analyte,
+      levels = analyte_info$analyte
+    )
+  ) %>%
+  arrange(site, analyte) %>%
+  select(
+    site, analyte, units,
+    n_site, n_analyte,
+    mean, median, min, max
+  )
+
+
+# 6. Format for manuscript table
+chem_summary_table <- chem_summary %>%
+  mutate(
+    across(
+      c(mean, median, min, max),
+      ~ round(.x, 3)
+    ),
+    range = if_else(
+      !is.na(min) & !is.na(max),
+      paste0(
+        format(min, trim = TRUE, scientific = FALSE),
+        "–",
+        format(max, trim = TRUE, scientific = FALSE)
+      ),
+      NA_character_
+    )
+  ) %>%
+  select(
+    Site = site,
+    Analyte = analyte,
+    Units = units,
+    `Site samples (n)` = n_site,
+    `Analyte samples (n)` = n_analyte,
+    Mean = mean,
+    Median = median,
+    Range = range
+  )
+
+print(chem_summary_table, n = Inf)
+
+
+# 7. Export both tables
+
+# write_csv(
+#   chem_summary,
+#   "water_chemistry_summary_numeric.csv"
+# )
+# 
+# write_csv(
+#   chem_summary_table,
+#   "water_chemistry_summary_manuscript.csv"
+# )
+```
+
+end of script

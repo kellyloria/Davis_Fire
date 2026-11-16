@@ -1,17 +1,34 @@
-# MS: Variation in Seasonal Hydrologic Connectivity Regulates Post-Fire Solute and Metal Dynamics in an Arid Mountain Catchment 
+# MS: Hydrologic Variability and Water Quality Responses Following Wildfire in Semi-Arid Mountain Catchments 
 
-## Workflow
-- Cleaning scripts for chemistry, biomass, canopy cover and YSI data: https://github.com/kellyloria/Davis_Fire/tree/main/Data_cleaning_scripts
-  
-## SI for the manuscript 
-- https://github.com/kellyloria/Davis_Fire/blob/main/ERDC_MS_figures.md
-- Storm flow calculations (Figure 2)
-- ANOVA's for differences in solute concentrations (Figure 3)
-- Double mass curve calculations (Figure 4 and 5)
-- Uses ERDC_MS_water_chem_dat.csv, ERDC_MS_hydroclim_dat.csv and Davis_MS_fxnflow.csv
+## Data cleaning
+- [Data cleaning scripts](https://github.com/kellyloria/Davis_Fire/tree/main/Data_cleaning_scripts) for water chemistry, algal biomass, canopy cover, and YSI observations.
 
-  
-## Regression analysis
-- https://github.com/kellyloria/Davis_Fire/blob/main/ERDC_MS_solute_regression.md
-- Using Bayesian regression to determine the relative importance of time, streamflow, and precipitation in transporting fire solutes (Figrue 6).
-- Uses ERDC_MS_water_chem_dat.csv and ERDC_MS_hydroclim_dat.csv
+## Manuscript analyses
+
+### 01. Hydroclimate and water quality
+[Hydro_clim_context_01.Rmd](Hydro_clim_context_01.Rmd)
+
+- Characterizes seasonal flow regimes, precipitation events, and water quality sampling (Figures 2–4).
+- Evaluates differences in solute concentrations among streams and sampling locations using ANOVA.
+- Generates summary statistics and supporting water chemistry tables.
+
+### 02. Double mass curve analysis
+[DMC_residual_panels_02.Rmd](DMC_residual_panels_02.Rmd)
+
+- Estimates cumulative water volumes and solute loads for Winters USGS and Ophir Creek.
+- Uses double mass curves (DMCs) to characterize post-fire solute transport dynamics (Figures 5–6).
+- Evaluates temporal departures from proportional solute transport using DMC residuals.
+
+### 03. Bayesian regression analysis
+[Bayesian_regression_03.Rmd](Bayesian_regression_03.Rmd)
+
+- Fits left-censored lognormal Bayesian regression models of post-fire solute concentrations.
+- Evaluates the relative importance of time since fire, observed discharge, and antecedent precipitation.
+- Summarizes posterior estimates, credible intervals, and model diagnostics.
+
+## Input datasets
+
+All three manuscript analyses use the same datasets located in `Dryad_data/`:
+
+- `DFMS_water_quality_data_2026.csv` — Water chemistry observations and laboratory detection-limit metadata.
+- `DFMS_hydro_clim_WY2024_2026.csv` — Daily precipitation, observed discharge, and functional flow classifications for water years 2024–2026.

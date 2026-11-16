@@ -1,0 +1,7 @@
+site_lab,n_samples,n_with_Q,n_with_PPT,n_usable,in_scope,enters_models
+browns,20,5,11,5,TRUE,TRUE
+browns_sub,19,5,0,0,TRUE,FALSE
+davis,9,9,9,9,TRUE,TRUE
+ophir,28,28,28,28,FALSE,FALSE
+winters_up,23,1,0,0,TRUE,FALSE
+winters_usgs,29,29,29,29,TRUE,TRUE
