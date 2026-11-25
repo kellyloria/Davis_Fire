@@ -9,7 +9,7 @@ chains_x_iter,4 x 2000
 adapt_delta,0.97
 seed,2026
 interval,95%
-run_date,2026-11-16
+run_date,2026-11-24
 brms_version,2.23.0
-chemistry_csv,/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Dryad_data/DF_water_quality_data_2026.csv
-hydrology_csv,/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Dryad_data/hydro_clim_WY2024_2026.csv
+chemistry_csv,./DFMS_water_quality_data_2026.csv
+hydrology_csv,./DFMS_hydro_clim_WY2024_2026.csv

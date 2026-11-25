@@ -91,8 +91,20 @@ site_labels <- c(winters_usgs = "Winters USGS", ophir = "Ophir")
 
 # Set start and end deliberately: these dates define the cumulative-volume baseline.
 analysis_start <- as.Date("2024-10-15")
-analysis_end   <- as.Date("2026-05-14")
+analysis_end   <- as.Date("2026-05-15")
 fire_date      <- as.Date("2024-09-25")  # containment date; used for plot color
+
+# Water-year DMCs: each DMC restarts on Oct 1 (cumulative Q and load reset to 0
+# and are normalized within the water year). WY2025 = Oct 1 2024 - Sep 30 2025;
+# WY2026 = Oct 1 2025 - end of analysis window (May 15 2026).
+# NOTE: the first WY2025 interval cannot start before analysis_start (Oct 15 2024
+# here, where daily Q coverage begins). Move analysis_start to 2024-10-01 only
+# if Q is complete from Oct 1; otherwise the first interval is incomplete.
+wy_levels   <- c("WY2025", "WY2026")
+wy_shapes   <- c(WY2025 = 16, WY2026 = 17)           # point shape by water year
+wy_line_cols <- c(WY2025 = "red", WY2026 = "blue")    # trend-line / label color by water year
+tsf_limits  <- c(0, 595)                              # fixed days-since-fire color range
+water_year_of <- function(x) lubridate::year(x) + (lubridate::month(x) >= 10)
 
 # Set FALSE to exclude below-detection-limit substituted concentrations.
 include_bdl <- TRUE
@@ -100,6 +112,8 @@ include_bdl <- TRUE
 
 
 For each chemistry sample, the measured concentration is assumed representative of the water volume **since the preceding chemistry sample** (the first sample represents the period since the analysis start date). Interval loads are estimates, not measured continuous loads. A chemistry value with a missing discharge day in its interval is **not** assigned a load; the default analysis starts a new complete series after such a gap and does not silently sum across missing intervals. The analysis uses one common observation window for both sites and each analyte's available chemistry observations.
+
+**Water-year DMCs.** Each site/analyte has up to two DMCs: WY2025 (Oct 1 2024 – Sep 30 2025; starts at `analysis_start`) and WY2026 (Oct 1 2025 – May 15 2026). Cumulative flow and load restart at zero on Oct 1, so the first WY2026 sample represents the period since Oct 1 2025 (not since the last WY2025 sample), and each water year is normalized to its own total. Slopes are fit separately per water year. A trend line is drawn only when slope ± 1 SE does not include 1.
 
 
 ## 2. Chemistry analytes and units
@@ -310,13 +324,21 @@ For a sample on date `t_k`, interval volume includes days **after the previous s
 
 # 5. Estimate interval water volumes and solute loads
 chem_intervals <- chem_daily %>%
-  group_by(site, analyte) %>%
+  mutate(
+    wy       = water_year_of(date),
+    wy_lab   = factor(paste0("WY", wy), levels = wy_levels),
+    wy_start = as.Date(paste0(wy - 1, "-10-01"))
+  ) %>%
+  group_by(site, analyte, wy_lab) %>%
   arrange(date, .by_group = TRUE) %>%
   mutate(
-    interval_start = lag(
-      date,
-      default = analysis_start - 1L
-    ) + 1L,
+    # first sample of each water year represents the period since Oct 1
+    # (or analysis_start); later samples since the previous sample
+    interval_start = if_else(
+      row_number() == 1L,
+      pmax(wy_start, analysis_start),
+      lag(date) + 1L
+    ),
 
     interval_end = date,
 
@@ -388,7 +410,7 @@ loads_all <- chem_intervals %>%
       Q_interval_liters / 1000
   ) %>%
   arrange(site, analyte, date) %>%
-  group_by(site, analyte) %>%
+  group_by(site, analyte, wy_lab) %>%
   mutate(
     run_id = cumsum(!complete_interval),
 
@@ -401,7 +423,7 @@ loads_all <- chem_intervals %>%
 
 # QC summary
 interval_qc <- loads_all %>%
-  group_by(site, analyte) %>%
+  group_by(site, analyte, wy_lab) %>%
   summarise(
     n_intervals = n(),
 
@@ -426,7 +448,7 @@ knitr::kable(interval_qc)
 # change analysis_start to a date with complete Q coverage, then rerun.
 dmc_long <- loads_all %>%
   filter(in_dmc) %>%
-  group_by(site, analyte) %>%
+  group_by(site, analyte, wy_lab) %>%
   arrange(date, .by_group = TRUE) %>%
   mutate(
     Q_c_liters = cumsum(Q_interval_liters),
@@ -483,9 +505,15 @@ fit_one_dmc <- function(dat) {
 }
 
 models_tbl <- dmc_long %>%
-  group_by(site, analyte) %>%
+  group_by(site, analyte, wy_lab) %>%
   group_modify(~fit_one_dmc(.x)) %>%
   ungroup() %>%
+  mutate(
+    # Trend line is hidden when slope +/- 1 SE overlaps the 1:1 slope of 1
+    covers_one = is.finite(slope) & is.finite(std_error) &
+      (slope - std_error <= 1) & (slope + std_error >= 1),
+    show_line  = is.finite(slope) & !covers_one
+  ) %>%
   mutate(interpretation = case_when(
     is.na(slope) ~ "Insufficient data",
     slope > 1 ~ "Relative enrichment (descriptive)",
@@ -493,33 +521,12 @@ models_tbl <- dmc_long %>%
     TRUE ~ "Proportional"
   ))
 
-knitr::kable(models_tbl %>% select(site, analyte, n_samples, slope, lwr, upr, p_vs_1, interpretation), digits = 3)
+knitr::kable(models_tbl %>% select(site, analyte, wy_lab, n_samples, slope, std_error, lwr, upr, p_vs_1, show_line, interpretation), digits = 3)
 ```
 
 ## 7. Plot DMCs
 
 ```{r plotting-functions}
-plot_dmc <- function(analyte_name) {
-  dat <- dmc_long %>% filter(analyte == analyte_name)
-  mod <- models_tbl %>% filter(analyte == analyte_name, is.finite(slope)) %>%
-    mutate(label = sprintf("β = %.2f", slope))
-  ggplot(dat, aes(Q_c_norm, load_c_norm)) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey65") +
-    geom_abline(data = mod, aes(slope = slope, intercept = 0),
-                inherit.aes = FALSE, color = "black", linewidth = 0.6) +
-    geom_path(color = "grey55", linewidth = 0.7, na.rm = TRUE) +
-    geom_point(aes(color = tsf), size = 2.5, na.rm = TRUE) +
-    geom_text(data = mod, aes(x = 0.05, y = 0.94, label = label),
-              inherit.aes = FALSE, hjust = 0, size = 4) +
-    facet_wrap(~site, nrow = 1, drop = FALSE) +
-    scale_color_viridis_c(option = "plasma", direction = -1, name = "Days since fire") +
-    coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
-    labs(x = "Norm. cumulative streamflow",
-         y = paste("Norm. cumulative", analyte_name)) +
-    theme_minimal(base_size = 12) +
-    theme(legend.position = "bottom", panel.grid.minor = element_blank())
-}
-
 ### better visual
 # Updated DMC plotting function
 
@@ -534,8 +541,12 @@ plot_dmc <- function(analyte_name) {
       is.finite(slope)
     ) %>%
     mutate(
-      label = sprintf("β = %.2f", slope)
+      label   = sprintf("%s \u03b2 = %.2f", wy_lab, slope),
+      label_y = if_else(wy_lab == "WY2025", 0.95, 0.85)
     )
+
+  # Only draw trend lines whose slope +/- 1 SE does not cover 1
+  mod_line <- mod %>% filter(show_line)
 
   ggplot(dat, aes(Q_c_norm, load_c_norm)) +
 
@@ -543,22 +554,26 @@ plot_dmc <- function(analyte_name) {
     geom_abline(
       slope = 1,
       intercept = 0,
-      linetype = "dashed",
-      color = "grey65",
-      linewidth = 0.5
-    ) +
-
-    # Estimated slope
-    geom_abline(
-      data = mod,
-      aes(slope = slope, intercept = 0),
-      inherit.aes = FALSE,
-      color = "black",
+      linetype = "dotted",
+      color = "grey80",
       linewidth = 0.6
     ) +
 
-    # Cumulative trajectory
+    # Estimated slope, one line per water year (red = WY2025, blue = WY2026);
+    # mod_line already excludes fits whose slope +/- 1 SE covers 1
+    lapply(wy_levels, function(w) {
+      geom_abline(
+        data = filter(mod_line, wy_lab == w),
+        aes(slope = slope, intercept = 0),
+        inherit.aes = FALSE,
+        color = wy_line_cols[[w]],
+        linewidth = 0.6
+      )
+    }) +
+
+    # Cumulative trajectory, one path per water year
     geom_path(
+      aes(group = wy_lab),
       color = "grey55",
       linewidth = 0.6,
       na.rm = TRUE
@@ -566,24 +581,27 @@ plot_dmc <- function(analyte_name) {
 
     # Observations
     geom_point(
-      aes(color = tsf),
+      aes(color = tsf, shape = wy_lab),
       size = 2,
       na.rm = TRUE
     ) +
 
-    # Slope annotations
-    geom_text(
-      data = mod,
-      aes(
-        x = 0.05,
-        y = 0.88,
-        label = label
-      ),
-      inherit.aes = FALSE,
-      hjust = 0,
-      vjust = 1,
-      size = 2.7
-    ) +
+    # Slope annotations, colored to match each water year's trend line
+    lapply(wy_levels, function(w) {
+      geom_text(
+        data = filter(mod, wy_lab == w),
+        aes(
+          x = 0.05,
+          y = label_y,
+          label = label
+        ),
+        inherit.aes = FALSE,
+        color = wy_line_cols[[w]],
+        hjust = 0,
+        vjust = 1,
+        size = 2.7
+      )
+    }) +
 
     # Site panels
     facet_wrap(
@@ -596,7 +614,18 @@ plot_dmc <- function(analyte_name) {
     scale_color_viridis_c(
       option = "plasma",
       direction = -1,
-      name = "Days since fire"
+      name = "Days since fire",
+      limits = tsf_limits,
+      breaks = c(0, 200, 400),
+      oob = scales::squish
+    ) +
+
+    # Water-year encodings (shared legend)
+    scale_shape_manual(
+      name = "Water year",
+      values = wy_shapes,
+      limits = wy_levels,
+      drop = FALSE
     ) +
 
     # Consistent axes
@@ -701,10 +730,11 @@ These are residuals from the descriptive normalized DMC regression. Their cumula
 
 ```{r residuals}
 residuals_long <- dmc_long %>%
-  left_join(models_tbl %>% select(site, analyte, slope), by = c("site", "analyte")) %>%
+  left_join(models_tbl %>% select(site, analyte, wy_lab, slope),
+            by = c("site", "analyte", "wy_lab")) %>%
   mutate(fitted_norm = slope * Q_c_norm,
          resid_norm = load_c_norm - fitted_norm) %>%
-  group_by(site, analyte) %>%
+  group_by(site, analyte, wy_lab) %>%
   arrange(date, .by_group = TRUE) %>%
   mutate(cumul_resid = cumsum(resid_norm)) %>%
   ungroup()
@@ -714,11 +744,14 @@ plot_dmc_residuals <- function(analyte_name) {
     filter(analyte == analyte_name) %>%
     ggplot(aes(date, cumul_resid)) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "grey65") +
-    geom_line(color = "grey45") +
-    geom_point(aes(color = tsf), size = 2) +
+    geom_line(aes(group = wy_lab), color = "grey45") +
+    geom_point(aes(color = tsf, shape = wy_lab), size = 2) +
     facet_wrap(~site, nrow = 1) + #scales = "free_y")
     scale_color_viridis_c(option = "plasma", direction = -1,
-                          name = "Days since fire") +
+                          name = "Days since fire",
+                          limits = tsf_limits, oob = scales::squish) +
+    scale_shape_manual(name = "Water year", values = wy_shapes,
+                       limits = wy_levels, drop = FALSE) +
     labs(title = paste("DMC residuals:", analyte_name),
          x = NULL, y = "Residual") +
     theme_minimal(base_size = 12) +
@@ -829,14 +862,14 @@ DMC_grid <- ggarrange(
   ncol=1,
   nrow=5)
 
-ggsave(
-    filename = ("DMC_nitrients.png"),
-    plot = DMC_grid,
-    width = 11,
-    height = 14.5,
-    dpi = 300,
-    bg = "white"
-  )
+# ggsave(
+#     filename = ("DMC_nitrients_unique_WY.png"),
+#     plot = DMC_grid,
+#     width = 11,
+#     height = 14.5,
+#     dpi = 300,
+#     bg = "white"
+#   )
   
   
 DMC_metal_grid <- ggarrange(
@@ -854,7 +887,7 @@ DMC_metal_grid
 
 
 # ggsave(
-#     filename = ("DMC_metals.png"),
+#     filename = ("DMC_metals_unique_WY.png"),
 #     plot = DMC_metal_grid,
 #     width = 11,
 #     height = 14.5,

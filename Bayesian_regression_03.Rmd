@@ -9,8 +9,8 @@ output:
     toc_depth: 3
     html_preview: false
 params:
-  chemistry_csv: "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/DFMS_water_quality_data_2026.csv"
-  hydro_csv: "/Users/kellyloria/Documents/DRI/ERDC_Davis_Fire/Dryad_data/DFMS_hydro_clim_WY2024_2026.csv"
+  chemistry_csv: "./DFMS_water_quality_data_2026.csv"
+  hydro_csv: "./DFMS_hydro_clim_WY2024_2026.csv"
   output_dir: "outputs/bayes"
   qc_substitution_factor: 0.5
   assume_quantified: "TSS"
@@ -549,9 +549,25 @@ terms_plot <- intersect(c("Streamflow", "Precipitation"), unique(coef_tab$term))
 plot_dat <- coef_tab %>% filter(term %in% terms_plot) %>%
   mutate(label = sprintf("%s (%d%% cens.)", analyte, round(pct_censored)),
          term = factor(term, levels = terms_plot))
+
+
+
 ord <- plot_dat %>% filter(term == terms_plot[length(terms_plot)]) %>% arrange(fold) %>% pull(label)
 plot_dat <- plot_dat %>% mutate(label = factor(label, levels = ord))
 
+# 
+# ord <- plot_dat %>%
+#   group_by(label) %>%
+#   summarise(
+#     max_fold = max(fold, na.rm = TRUE),
+#     .groups = "drop"
+#   ) %>%
+#   arrange(max_fold) %>%
+#   pull(label) %>%
+#   as.character()
+# 
+# plot_dat <- plot_dat %>%
+#   mutate(label = factor(label, levels = ord))
 
 
 # 1. Prepare plotting data
@@ -649,8 +665,6 @@ p <- ggplot(
     name = "Point fill"
   ) +
 
-  scale_x_log10() +
-
   labs(
     x = sprintf(
       "Change in concentration per 1 SD (median and %d%% CrI)",
@@ -658,6 +672,17 @@ p <- ggplot(
     ),
     y = NULL
   ) +
+  
+  #   scale_x_log10(
+  #   breaks = seq(0.5, 3.5, by = 0.5),
+  #   labels = function(x) sprintf("%.1f", x)
+  # ) +
+  
+    scale_x_continuous(
+    breaks = seq(0.5, 3.5, by = 0.5),
+    labels = function(x) sprintf("%.1f", x)
+  ) +
+  # 
 
   guides(
    # colour = "none",
@@ -676,7 +701,7 @@ print(p)
 
 
 
-# ggsave(file.path(out_dir, "bayesian_coefficients_MS.png"), p, width = 4.5, height = 7, dpi = 300, bg = "white")
+# ggsave(file.path(out_dir, "bayesian_coefficients_MS_2.png"), p, width = 5, height = 7, dpi = 300, bg = "white")
 ```
 
 ## 6. Record of model run

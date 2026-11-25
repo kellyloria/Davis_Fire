@@ -1,7 +1,7 @@
 ERDC Davis Fire MS
 ================
 K. Loria
-2026-11-16
+2026-11-25
 
 - [1. Libraries and input checks](#1-libraries-and-input-checks)
 - [2. Chemistry analytes and units](#2-chemistry-analytes-and-units)
@@ -50,8 +50,20 @@ site_labels <- c(winters_usgs = "Winters USGS", ophir = "Ophir")
 
 # Set start and end deliberately: these dates define the cumulative-volume baseline.
 analysis_start <- as.Date("2024-10-15")
-analysis_end   <- as.Date("2026-05-14")
+analysis_end   <- as.Date("2026-05-15")
 fire_date      <- as.Date("2024-09-25")  # containment date; used for plot color
+
+# Water-year DMCs: each DMC restarts on Oct 1 (cumulative Q and load reset to 0
+# and are normalized within the water year). WY2025 = Oct 1 2024 - Sep 30 2025;
+# WY2026 = Oct 1 2025 - end of analysis window (May 15 2026).
+# NOTE: the first WY2025 interval cannot start before analysis_start (Oct 15 2024
+# here, where daily Q coverage begins). Move analysis_start to 2024-10-01 only
+# if Q is complete from Oct 1; otherwise the first interval is incomplete.
+wy_levels   <- c("WY2025", "WY2026")
+wy_shapes   <- c(WY2025 = 16, WY2026 = 17)           # point shape by water year
+wy_line_cols <- c(WY2025 = "red", WY2026 = "blue")    # trend-line / label color by water year
+tsf_limits  <- c(0, 595)                              # fixed days-since-fire color range
+water_year_of <- function(x) lubridate::year(x) + (lubridate::month(x) >= 10)
 
 # Set FALSE to exclude below-detection-limit substituted concentrations.
 include_bdl <- TRUE
@@ -66,6 +78,14 @@ loads. A chemistry value with a missing discharge day in its interval is
 series after such a gap and does not silently sum across missing
 intervals. The analysis uses one common observation window for both
 sites and each analyte’s available chemistry observations.
+
+**Water-year DMCs.** Each site/analyte has up to two DMCs: WY2025 (Oct 1
+2024 – Sep 30 2025; starts at `analysis_start`) and WY2026 (Oct 1 2025 –
+May 15 2026). Cumulative flow and load restart at zero on Oct 1, so the
+first WY2026 sample represents the period since Oct 1 2025 (not since
+the last WY2025 sample), and each water year is normalized to its own
+total. Slopes are fit separately per water year. A trend line is drawn
+only when slope ± 1 SE does not include 1.
 
 ## 2. Chemistry analytes and units
 
@@ -162,8 +182,8 @@ knitr::kable(flow_coverage, digits = 1)
 
 | site         | n_days | n_valid_Q | pct_valid_Q | n_zero_Q |
 |:-------------|-------:|----------:|------------:|---------:|
-| ophir        |    577 |       577 |         100 |        2 |
-| winters_usgs |    577 |       577 |         100 |        0 |
+| ophir        |    578 |       578 |         100 |        2 |
+| winters_usgs |    578 |       578 |         100 |        0 |
 
 ## 4. Prepare water-chemistry observations
 
@@ -289,7 +309,7 @@ knitr::kable(
 | ophir | Pb | 2024-10-16 | 0.000 | 2 | 0.000 | 0.000 | 2024-10-16 14:14:00 | 2024-10-16 16:16:00 | 21 | TRUE |
 | ophir | Sr | 2024-10-16 | 0.076 | 2 | 0.076 | 0.076 | 2024-10-16 14:14:00 | 2024-10-16 16:16:00 | 21 | TRUE |
 | ophir | TDN | 2024-10-16 | 0.186 | 2 | 0.186 | 0.186 | 2024-10-16 14:14:00 | 2024-10-16 16:16:00 | 21 | TRUE |
-| ophir | TSS | 2024-10-16 | 9.600 | 2 | 9.600 | 9.600 | 2024-10-16 14:14:00 | 2024-10-16 16:16:00 | 21 | TRUE |
+| ophir | TSS | 2024-10-16 | 10.000 | 2 | 10.000 | 10.000 | 2024-10-16 14:14:00 | 2024-10-16 16:16:00 | 21 | TRUE |
 | ophir | Zn | 2024-10-16 | 0.002 | 2 | 0.002 | 0.002 | 2024-10-16 14:14:00 | 2024-10-16 16:16:00 | 21 | TRUE |
 | winters_usgs | Al | 2024-10-16 | 0.004 | 3 | 0.004 | 0.004 | 2024-10-16 11:00:00 | 2024-10-16 16:48:00 | 21 | TRUE |
 | winters_usgs | As | 2024-10-16 | 0.000 | 3 | 0.000 | 0.000 | 2024-10-16 11:00:00 | 2024-10-16 16:48:00 | 21 | TRUE |
@@ -306,7 +326,7 @@ knitr::kable(
 | winters_usgs | Pb | 2024-10-16 | 0.000 | 3 | 0.000 | 0.000 | 2024-10-16 11:00:00 | 2024-10-16 16:48:00 | 21 | TRUE |
 | winters_usgs | Sr | 2024-10-16 | 0.081 | 3 | 0.081 | 0.081 | 2024-10-16 11:00:00 | 2024-10-16 16:48:00 | 21 | TRUE |
 | winters_usgs | TDN | 2024-10-16 | 0.133 | 3 | 0.133 | 0.133 | 2024-10-16 11:00:00 | 2024-10-16 16:48:00 | 21 | TRUE |
-| winters_usgs | TSS | 2024-10-16 | 23.100 | 3 | 23.100 | 23.100 | 2024-10-16 11:00:00 | 2024-10-16 16:48:00 | 21 | TRUE |
+| winters_usgs | TSS | 2024-10-16 | 23.000 | 3 | 23.000 | 23.000 | 2024-10-16 11:00:00 | 2024-10-16 16:48:00 | 21 | TRUE |
 | winters_usgs | Zn | 2024-10-16 | 0.004 | 3 | 0.004 | 0.004 | 2024-10-16 11:00:00 | 2024-10-16 16:48:00 | 21 | TRUE |
 
 ## 5. Estimate interval water volumes and solute loads
@@ -325,13 +345,21 @@ interval.
 
 # 5. Estimate interval water volumes and solute loads
 chem_intervals <- chem_daily %>%
-  group_by(site, analyte) %>%
+  mutate(
+    wy       = water_year_of(date),
+    wy_lab   = factor(paste0("WY", wy), levels = wy_levels),
+    wy_start = as.Date(paste0(wy - 1, "-10-01"))
+  ) %>%
+  group_by(site, analyte, wy_lab) %>%
   arrange(date, .by_group = TRUE) %>%
   mutate(
-    interval_start = lag(
-      date,
-      default = analysis_start - 1L
-    ) + 1L,
+    # first sample of each water year represents the period since Oct 1
+    # (or analysis_start); later samples since the previous sample
+    interval_start = if_else(
+      row_number() == 1L,
+      pmax(wy_start, analysis_start),
+      lag(date) + 1L
+    ),
 
     interval_end = date,
 
@@ -403,7 +431,7 @@ loads_all <- chem_intervals %>%
       Q_interval_liters / 1000
   ) %>%
   arrange(site, analyte, date) %>%
-  group_by(site, analyte) %>%
+  group_by(site, analyte, wy_lab) %>%
   mutate(
     run_id = cumsum(!complete_interval),
 
@@ -416,7 +444,7 @@ loads_all <- chem_intervals %>%
 
 # QC summary
 interval_qc <- loads_all %>%
-  group_by(site, analyte) %>%
+  group_by(site, analyte, wy_lab) %>%
   summarise(
     n_intervals = n(),
 
@@ -436,51 +464,87 @@ interval_qc <- loads_all %>%
 knitr::kable(interval_qc)
 ```
 
-| site | analyte | n_intervals | n_complete_intervals | n_in_dmc | n_multiple_sample_days |
-|:---|:---|---:|---:|---:|---:|
-| ophir | Al | 27 | 27 | 27 | 1 |
-| ophir | As | 27 | 27 | 27 | 1 |
-| ophir | B | 27 | 27 | 27 | 1 |
-| ophir | Ba | 27 | 27 | 27 | 1 |
-| ophir | Ca | 27 | 27 | 27 | 1 |
-| ophir | Cr | 26 | 26 | 26 | 1 |
-| ophir | DOC | 27 | 27 | 27 | 1 |
-| ophir | Fe | 27 | 27 | 27 | 1 |
-| ophir | Mn | 27 | 27 | 27 | 1 |
-| ophir | NH4_N | 25 | 25 | 25 | 1 |
-| ophir | NO3_N | 24 | 24 | 24 | 1 |
-| ophir | PO4_P | 24 | 24 | 24 | 1 |
-| ophir | Pb | 26 | 26 | 26 | 1 |
-| ophir | Sr | 27 | 27 | 27 | 1 |
-| ophir | TDN | 27 | 27 | 27 | 1 |
-| ophir | TOC | 23 | 23 | 23 | 0 |
-| ophir | TSS | 23 | 23 | 23 | 1 |
-| ophir | Zn | 27 | 27 | 27 | 1 |
-| winters_usgs | Al | 27 | 27 | 27 | 1 |
-| winters_usgs | As | 27 | 27 | 27 | 1 |
-| winters_usgs | B | 27 | 27 | 27 | 1 |
-| winters_usgs | Ba | 27 | 27 | 27 | 1 |
-| winters_usgs | Ca | 27 | 27 | 27 | 1 |
-| winters_usgs | Cr | 26 | 26 | 26 | 1 |
-| winters_usgs | DOC | 27 | 27 | 27 | 1 |
-| winters_usgs | Fe | 27 | 27 | 27 | 1 |
-| winters_usgs | Mn | 27 | 27 | 27 | 1 |
-| winters_usgs | NH4_N | 25 | 25 | 25 | 1 |
-| winters_usgs | NO3_N | 25 | 25 | 25 | 1 |
-| winters_usgs | PO4_P | 24 | 24 | 24 | 1 |
-| winters_usgs | Pb | 26 | 26 | 26 | 1 |
-| winters_usgs | Sr | 27 | 27 | 27 | 1 |
-| winters_usgs | TDN | 27 | 27 | 27 | 1 |
-| winters_usgs | TOC | 23 | 23 | 23 | 0 |
-| winters_usgs | TSS | 23 | 23 | 23 | 1 |
-| winters_usgs | Zn | 27 | 27 | 27 | 1 |
+| site | analyte | wy_lab | n_intervals | n_complete_intervals | n_in_dmc | n_multiple_sample_days |
+|:---|:---|:---|---:|---:|---:|---:|
+| ophir | Al | WY2025 | 18 | 18 | 18 | 1 |
+| ophir | Al | WY2026 | 9 | 9 | 9 | 0 |
+| ophir | As | WY2025 | 18 | 18 | 18 | 1 |
+| ophir | As | WY2026 | 9 | 9 | 9 | 0 |
+| ophir | B | WY2025 | 18 | 18 | 18 | 1 |
+| ophir | B | WY2026 | 9 | 9 | 9 | 0 |
+| ophir | Ba | WY2025 | 18 | 18 | 18 | 1 |
+| ophir | Ba | WY2026 | 9 | 9 | 9 | 0 |
+| ophir | Ca | WY2025 | 18 | 18 | 18 | 1 |
+| ophir | Ca | WY2026 | 9 | 9 | 9 | 0 |
+| ophir | Cr | WY2025 | 18 | 18 | 18 | 1 |
+| ophir | Cr | WY2026 | 8 | 8 | 8 | 0 |
+| ophir | DOC | WY2025 | 18 | 18 | 18 | 1 |
+| ophir | DOC | WY2026 | 9 | 9 | 9 | 0 |
+| ophir | Fe | WY2025 | 18 | 18 | 18 | 1 |
+| ophir | Fe | WY2026 | 9 | 9 | 9 | 0 |
+| ophir | Mn | WY2025 | 18 | 18 | 18 | 1 |
+| ophir | Mn | WY2026 | 9 | 9 | 9 | 0 |
+| ophir | NH4_N | WY2025 | 17 | 17 | 17 | 1 |
+| ophir | NH4_N | WY2026 | 8 | 8 | 8 | 0 |
+| ophir | NO3_N | WY2025 | 17 | 17 | 17 | 1 |
+| ophir | NO3_N | WY2026 | 7 | 7 | 7 | 0 |
+| ophir | PO4_P | WY2025 | 17 | 17 | 17 | 1 |
+| ophir | PO4_P | WY2026 | 7 | 7 | 7 | 0 |
+| ophir | Pb | WY2025 | 18 | 18 | 18 | 1 |
+| ophir | Pb | WY2026 | 8 | 8 | 8 | 0 |
+| ophir | Sr | WY2025 | 18 | 18 | 18 | 1 |
+| ophir | Sr | WY2026 | 9 | 9 | 9 | 0 |
+| ophir | TDN | WY2025 | 18 | 18 | 18 | 1 |
+| ophir | TDN | WY2026 | 9 | 9 | 9 | 0 |
+| ophir | TOC | WY2025 | 14 | 14 | 14 | 0 |
+| ophir | TOC | WY2026 | 9 | 9 | 9 | 0 |
+| ophir | TSS | WY2025 | 15 | 15 | 15 | 1 |
+| ophir | TSS | WY2026 | 8 | 8 | 8 | 0 |
+| ophir | Zn | WY2025 | 18 | 18 | 18 | 1 |
+| ophir | Zn | WY2026 | 9 | 9 | 9 | 0 |
+| winters_usgs | Al | WY2025 | 18 | 18 | 18 | 1 |
+| winters_usgs | Al | WY2026 | 9 | 9 | 9 | 0 |
+| winters_usgs | As | WY2025 | 18 | 18 | 18 | 1 |
+| winters_usgs | As | WY2026 | 9 | 9 | 9 | 0 |
+| winters_usgs | B | WY2025 | 18 | 18 | 18 | 1 |
+| winters_usgs | B | WY2026 | 9 | 9 | 9 | 0 |
+| winters_usgs | Ba | WY2025 | 18 | 18 | 18 | 1 |
+| winters_usgs | Ba | WY2026 | 9 | 9 | 9 | 0 |
+| winters_usgs | Ca | WY2025 | 18 | 18 | 18 | 1 |
+| winters_usgs | Ca | WY2026 | 9 | 9 | 9 | 0 |
+| winters_usgs | Cr | WY2025 | 18 | 18 | 18 | 1 |
+| winters_usgs | Cr | WY2026 | 8 | 8 | 8 | 0 |
+| winters_usgs | DOC | WY2025 | 18 | 18 | 18 | 1 |
+| winters_usgs | DOC | WY2026 | 9 | 9 | 9 | 0 |
+| winters_usgs | Fe | WY2025 | 18 | 18 | 18 | 1 |
+| winters_usgs | Fe | WY2026 | 9 | 9 | 9 | 0 |
+| winters_usgs | Mn | WY2025 | 18 | 18 | 18 | 1 |
+| winters_usgs | Mn | WY2026 | 9 | 9 | 9 | 0 |
+| winters_usgs | NH4_N | WY2025 | 17 | 17 | 17 | 1 |
+| winters_usgs | NH4_N | WY2026 | 8 | 8 | 8 | 0 |
+| winters_usgs | NO3_N | WY2025 | 17 | 17 | 17 | 1 |
+| winters_usgs | NO3_N | WY2026 | 8 | 8 | 8 | 0 |
+| winters_usgs | PO4_P | WY2025 | 17 | 17 | 17 | 1 |
+| winters_usgs | PO4_P | WY2026 | 7 | 7 | 7 | 0 |
+| winters_usgs | Pb | WY2025 | 18 | 18 | 18 | 1 |
+| winters_usgs | Pb | WY2026 | 8 | 8 | 8 | 0 |
+| winters_usgs | Sr | WY2025 | 18 | 18 | 18 | 1 |
+| winters_usgs | Sr | WY2026 | 9 | 9 | 9 | 0 |
+| winters_usgs | TDN | WY2025 | 18 | 18 | 18 | 1 |
+| winters_usgs | TDN | WY2026 | 9 | 9 | 9 | 0 |
+| winters_usgs | TOC | WY2025 | 14 | 14 | 14 | 0 |
+| winters_usgs | TOC | WY2026 | 9 | 9 | 9 | 0 |
+| winters_usgs | TSS | WY2025 | 15 | 15 | 15 | 1 |
+| winters_usgs | TSS | WY2026 | 8 | 8 | 8 | 0 |
+| winters_usgs | Zn | WY2025 | 18 | 18 | 18 | 1 |
+| winters_usgs | Zn | WY2026 | 9 | 9 | 9 | 0 |
 
 ``` r
 # The first incomplete interval stops the primary series. If it occurs early,
 # change analysis_start to a date with complete Q coverage, then rerun.
 dmc_long <- loads_all %>%
   filter(in_dmc) %>%
-  group_by(site, analyte) %>%
+  group_by(site, analyte, wy_lab) %>%
   arrange(date, .by_group = TRUE) %>%
   mutate(
     Q_c_liters = cumsum(Q_interval_liters),
@@ -541,9 +605,15 @@ fit_one_dmc <- function(dat) {
 }
 
 models_tbl <- dmc_long %>%
-  group_by(site, analyte) %>%
+  group_by(site, analyte, wy_lab) %>%
   group_modify(~fit_one_dmc(.x)) %>%
   ungroup() %>%
+  mutate(
+    # Trend line is hidden when slope +/- 1 SE overlaps the 1:1 slope of 1
+    covers_one = is.finite(slope) & is.finite(std_error) &
+      (slope - std_error <= 1) & (slope + std_error >= 1),
+    show_line  = is.finite(slope) & !covers_one
+  ) %>%
   mutate(interpretation = case_when(
     is.na(slope) ~ "Insufficient data",
     slope > 1 ~ "Relative enrichment (descriptive)",
@@ -551,72 +621,87 @@ models_tbl <- dmc_long %>%
     TRUE ~ "Proportional"
   ))
 
-knitr::kable(models_tbl %>% select(site, analyte, n_samples, slope, lwr, upr, p_vs_1, interpretation), digits = 3)
+knitr::kable(models_tbl %>% select(site, analyte, wy_lab, n_samples, slope, std_error, lwr, upr, p_vs_1, show_line, interpretation), digits = 3)
 ```
 
-| site | analyte | n_samples | slope | lwr | upr | p_vs_1 | interpretation |
-|:---|:---|---:|---:|---:|---:|---:|:---|
-| Winters USGS | Al | 27 | 1.173 | 1.091 | 1.255 | 0.000 | Relative enrichment (descriptive) |
-| Winters USGS | As | 27 | 1.012 | 0.980 | 1.044 | 0.462 | Relative enrichment (descriptive) |
-| Winters USGS | B | 27 | 1.663 | 1.412 | 1.914 | 0.000 | Relative enrichment (descriptive) |
-| Winters USGS | Ba | 27 | 1.054 | 1.039 | 1.070 | 0.000 | Relative enrichment (descriptive) |
-| Winters USGS | Ca | 27 | 0.960 | 0.937 | 0.982 | 0.001 | Relative dilution (descriptive) |
-| Winters USGS | Cr | 26 | 0.287 | 0.131 | 0.443 | 0.000 | Relative dilution (descriptive) |
-| Winters USGS | DOC | 27 | 1.004 | 0.990 | 1.017 | 0.569 | Relative enrichment (descriptive) |
-| Winters USGS | Fe | 27 | 1.061 | 0.973 | 1.149 | 0.166 | Relative enrichment (descriptive) |
-| Winters USGS | Mn | 27 | 0.692 | 0.581 | 0.804 | 0.000 | Relative dilution (descriptive) |
-| Winters USGS | NH4_N | 25 | 1.000 | 1.000 | 1.000 | 0.000 | Relative dilution (descriptive) |
-| Winters USGS | NO3_N | 25 | 0.734 | 0.559 | 0.909 | 0.004 | Relative dilution (descriptive) |
-| Winters USGS | PO4_P | 24 | 1.231 | 1.132 | 1.330 | 0.000 | Relative enrichment (descriptive) |
-| Winters USGS | Pb | 26 | 0.462 | 0.320 | 0.603 | 0.000 | Relative dilution (descriptive) |
-| Winters USGS | Sr | 27 | 0.977 | 0.960 | 0.994 | 0.009 | Relative dilution (descriptive) |
-| Winters USGS | TDN | 27 | 0.868 | 0.802 | 0.935 | 0.000 | Relative dilution (descriptive) |
-| Winters USGS | TOC | 23 | 1.024 | 1.009 | 1.039 | 0.003 | Relative enrichment (descriptive) |
-| Winters USGS | TSS | 23 | 0.654 | 0.509 | 0.798 | 0.000 | Relative dilution (descriptive) |
-| Winters USGS | Zn | 27 | 1.265 | 1.159 | 1.372 | 0.000 | Relative enrichment (descriptive) |
-| Ophir | Al | 27 | 0.892 | 0.859 | 0.926 | 0.000 | Relative dilution (descriptive) |
-| Ophir | As | 27 | 1.000 | 0.967 | 1.033 | 0.995 | Relative dilution (descriptive) |
-| Ophir | B | 27 | 1.377 | 1.200 | 1.554 | 0.000 | Relative enrichment (descriptive) |
-| Ophir | Ba | 27 | 0.982 | 0.966 | 0.998 | 0.032 | Relative dilution (descriptive) |
-| Ophir | Ca | 27 | 0.984 | 0.966 | 1.003 | 0.100 | Relative dilution (descriptive) |
-| Ophir | Cr | 26 | 0.249 | 0.096 | 0.402 | 0.000 | Relative dilution (descriptive) |
-| Ophir | DOC | 27 | 0.923 | 0.907 | 0.940 | 0.000 | Relative dilution (descriptive) |
-| Ophir | Fe | 27 | 1.086 | 1.050 | 1.122 | 0.000 | Relative enrichment (descriptive) |
-| Ophir | Mn | 27 | 0.604 | 0.473 | 0.734 | 0.000 | Relative dilution (descriptive) |
-| Ophir | NH4_N | 25 | 0.998 | 0.989 | 1.006 | 0.567 | Relative dilution (descriptive) |
-| Ophir | NO3_N | 24 | 1.034 | 1.021 | 1.047 | 0.000 | Relative enrichment (descriptive) |
-| Ophir | PO4_P | 24 | 1.023 | 0.986 | 1.059 | 0.215 | Relative enrichment (descriptive) |
-| Ophir | Pb | 26 | 0.468 | 0.347 | 0.588 | 0.000 | Relative dilution (descriptive) |
-| Ophir | Sr | 27 | 1.012 | 0.998 | 1.027 | 0.094 | Relative enrichment (descriptive) |
-| Ophir | TDN | 27 | 0.898 | 0.866 | 0.931 | 0.000 | Relative dilution (descriptive) |
-| Ophir | TOC | 23 | 0.921 | 0.903 | 0.940 | 0.000 | Relative dilution (descriptive) |
-| Ophir | TSS | 23 | 1.178 | 1.073 | 1.283 | 0.002 | Relative enrichment (descriptive) |
-| Ophir | Zn | 27 | 0.728 | 0.646 | 0.810 | 0.000 | Relative dilution (descriptive) |
+| site | analyte | wy_lab | n_samples | slope | std_error | lwr | upr | p_vs_1 | show_line | interpretation |
+|:---|:---|:---|---:|---:|---:|---:|---:|---:|:---|:---|
+| Winters USGS | Al | WY2025 | 18 | 0.863 | 0.039 | 0.782 | 0.945 | 0.002 | TRUE | Relative dilution (descriptive) |
+| Winters USGS | Al | WY2026 | 9 | 0.902 | 0.047 | 0.794 | 1.010 | 0.070 | TRUE | Relative dilution (descriptive) |
+| Winters USGS | As | WY2025 | 18 | 0.882 | 0.028 | 0.823 | 0.940 | 0.000 | TRUE | Relative dilution (descriptive) |
+| Winters USGS | As | WY2026 | 9 | 1.025 | 0.016 | 0.989 | 1.061 | 0.147 | TRUE | Relative enrichment (descriptive) |
+| Winters USGS | B | WY2025 | 18 | 1.164 | 0.068 | 1.020 | 1.308 | 0.028 | TRUE | Relative enrichment (descriptive) |
+| Winters USGS | B | WY2026 | 9 | 1.088 | 0.083 | 0.897 | 1.279 | 0.320 | TRUE | Relative enrichment (descriptive) |
+| Winters USGS | Ba | WY2025 | 18 | 0.994 | 0.006 | 0.982 | 1.007 | 0.352 | FALSE | Relative dilution (descriptive) |
+| Winters USGS | Ba | WY2026 | 9 | 1.031 | 0.021 | 0.982 | 1.080 | 0.180 | TRUE | Relative enrichment (descriptive) |
+| Winters USGS | Ca | WY2025 | 18 | 0.950 | 0.014 | 0.920 | 0.980 | 0.003 | TRUE | Relative dilution (descriptive) |
+| Winters USGS | Ca | WY2026 | 9 | 1.015 | 0.010 | 0.992 | 1.038 | 0.168 | TRUE | Relative enrichment (descriptive) |
+| Winters USGS | Cr | WY2025 | 18 | 1.071 | 0.099 | 0.861 | 1.280 | 0.485 | FALSE | Relative enrichment (descriptive) |
+| Winters USGS | Cr | WY2026 | 8 | 0.837 | 0.108 | 0.581 | 1.093 | 0.176 | TRUE | Relative dilution (descriptive) |
+| Winters USGS | DOC | WY2025 | 18 | 1.005 | 0.011 | 0.981 | 1.028 | 0.686 | FALSE | Relative enrichment (descriptive) |
+| Winters USGS | DOC | WY2026 | 9 | 0.965 | 0.014 | 0.932 | 0.997 | 0.038 | TRUE | Relative dilution (descriptive) |
+| Winters USGS | Fe | WY2025 | 18 | 0.739 | 0.056 | 0.621 | 0.857 | 0.000 | TRUE | Relative dilution (descriptive) |
+| Winters USGS | Fe | WY2026 | 9 | 0.979 | 0.102 | 0.744 | 1.214 | 0.841 | FALSE | Relative dilution (descriptive) |
+| Winters USGS | Mn | WY2025 | 18 | 0.989 | 0.010 | 0.968 | 1.010 | 0.282 | TRUE | Relative dilution (descriptive) |
+| Winters USGS | Mn | WY2026 | 9 | 1.032 | 0.055 | 0.905 | 1.159 | 0.576 | FALSE | Relative enrichment (descriptive) |
+| Winters USGS | NH4_N | WY2025 | 17 | 1.000 | 0.000 | 1.000 | 1.000 | 1.000 | FALSE | Proportional |
+| Winters USGS | NH4_N | WY2026 | 8 | 1.000 | 0.000 | 1.000 | 1.000 | 1.000 | FALSE | Proportional |
+| Winters USGS | NO3_N | WY2025 | 17 | 1.078 | 0.029 | 1.016 | 1.140 | 0.017 | TRUE | Relative enrichment (descriptive) |
+| Winters USGS | NO3_N | WY2026 | 8 | 1.206 | 0.134 | 0.889 | 1.524 | 0.168 | TRUE | Relative enrichment (descriptive) |
+| Winters USGS | PO4_P | WY2025 | 17 | 0.950 | 0.018 | 0.912 | 0.989 | 0.015 | TRUE | Relative dilution (descriptive) |
+| Winters USGS | PO4_P | WY2026 | 7 | 0.898 | 0.052 | 0.770 | 1.025 | 0.098 | TRUE | Relative dilution (descriptive) |
+| Winters USGS | Pb | WY2025 | 18 | 1.043 | 0.060 | 0.917 | 1.170 | 0.479 | FALSE | Relative enrichment (descriptive) |
+| Winters USGS | Pb | WY2026 | 8 | 0.962 | 0.104 | 0.717 | 1.208 | 0.728 | FALSE | Relative dilution (descriptive) |
+| Winters USGS | Sr | WY2025 | 18 | 0.986 | 0.006 | 0.974 | 0.998 | 0.023 | TRUE | Relative dilution (descriptive) |
+| Winters USGS | Sr | WY2026 | 9 | 1.034 | 0.019 | 0.990 | 1.079 | 0.114 | TRUE | Relative enrichment (descriptive) |
+| Winters USGS | TDN | WY2025 | 18 | 0.999 | 0.023 | 0.950 | 1.048 | 0.971 | FALSE | Relative dilution (descriptive) |
+| Winters USGS | TDN | WY2026 | 9 | 1.084 | 0.052 | 0.964 | 1.204 | 0.146 | TRUE | Relative enrichment (descriptive) |
+| Winters USGS | TOC | WY2025 | 14 | 1.007 | 0.013 | 0.979 | 1.035 | 0.600 | FALSE | Relative enrichment (descriptive) |
+| Winters USGS | TOC | WY2026 | 9 | 0.995 | 0.006 | 0.981 | 1.009 | 0.463 | FALSE | Relative dilution (descriptive) |
+| Winters USGS | TSS | WY2025 | 15 | 0.997 | 0.022 | 0.950 | 1.044 | 0.890 | FALSE | Relative dilution (descriptive) |
+| Winters USGS | TSS | WY2026 | 8 | 1.085 | 0.150 | 0.729 | 1.440 | 0.591 | FALSE | Relative enrichment (descriptive) |
+| Winters USGS | Zn | WY2025 | 18 | 1.114 | 0.065 | 0.976 | 1.251 | 0.099 | TRUE | Relative enrichment (descriptive) |
+| Winters USGS | Zn | WY2026 | 9 | 1.138 | 0.100 | 0.907 | 1.370 | 0.206 | TRUE | Relative enrichment (descriptive) |
+| Ophir | Al | WY2025 | 18 | 0.977 | 0.026 | 0.922 | 1.033 | 0.405 | FALSE | Relative dilution (descriptive) |
+| Ophir | Al | WY2026 | 9 | 0.873 | 0.071 | 0.709 | 1.037 | 0.113 | TRUE | Relative dilution (descriptive) |
+| Ophir | As | WY2025 | 18 | 1.017 | 0.025 | 0.964 | 1.070 | 0.508 | FALSE | Relative enrichment (descriptive) |
+| Ophir | As | WY2026 | 9 | 1.127 | 0.064 | 0.979 | 1.275 | 0.084 | TRUE | Relative enrichment (descriptive) |
+| Ophir | B | WY2025 | 18 | 1.147 | 0.108 | 0.918 | 1.376 | 0.192 | TRUE | Relative enrichment (descriptive) |
+| Ophir | B | WY2026 | 9 | 1.115 | 0.082 | 0.926 | 1.304 | 0.197 | TRUE | Relative enrichment (descriptive) |
+| Ophir | Ba | WY2025 | 18 | 1.005 | 0.008 | 0.988 | 1.023 | 0.528 | FALSE | Relative enrichment (descriptive) |
+| Ophir | Ba | WY2026 | 9 | 1.056 | 0.027 | 0.992 | 1.119 | 0.077 | TRUE | Relative enrichment (descriptive) |
+| Ophir | Ca | WY2025 | 18 | 0.987 | 0.006 | 0.974 | 1.001 | 0.059 | TRUE | Relative dilution (descriptive) |
+| Ophir | Ca | WY2026 | 9 | 1.068 | 0.035 | 0.988 | 1.148 | 0.087 | TRUE | Relative enrichment (descriptive) |
+| Ophir | Cr | WY2025 | 18 | 1.138 | 0.112 | 0.901 | 1.375 | 0.237 | TRUE | Relative enrichment (descriptive) |
+| Ophir | Cr | WY2026 | 8 | 0.814 | 0.125 | 0.519 | 1.110 | 0.181 | TRUE | Relative dilution (descriptive) |
+| Ophir | DOC | WY2025 | 18 | 1.017 | 0.007 | 1.001 | 1.032 | 0.039 | TRUE | Relative enrichment (descriptive) |
+| Ophir | DOC | WY2026 | 9 | 0.954 | 0.028 | 0.890 | 1.019 | 0.143 | TRUE | Relative dilution (descriptive) |
+| Ophir | Fe | WY2025 | 18 | 0.979 | 0.007 | 0.963 | 0.994 | 0.009 | TRUE | Relative dilution (descriptive) |
+| Ophir | Fe | WY2026 | 9 | 1.137 | 0.121 | 0.858 | 1.416 | 0.291 | TRUE | Relative enrichment (descriptive) |
+| Ophir | Mn | WY2025 | 18 | 1.020 | 0.018 | 0.983 | 1.057 | 0.277 | TRUE | Relative enrichment (descriptive) |
+| Ophir | Mn | WY2026 | 9 | 1.053 | 0.082 | 0.864 | 1.243 | 0.534 | FALSE | Relative enrichment (descriptive) |
+| Ophir | NH4_N | WY2025 | 17 | 1.000 | 0.000 | 1.000 | 1.000 | 0.012 | TRUE | Relative enrichment (descriptive) |
+| Ophir | NH4_N | WY2026 | 8 | 1.029 | 0.028 | 0.963 | 1.095 | 0.338 | TRUE | Relative enrichment (descriptive) |
+| Ophir | NO3_N | WY2025 | 17 | 0.990 | 0.009 | 0.972 | 1.008 | 0.267 | TRUE | Relative dilution (descriptive) |
+| Ophir | NO3_N | WY2026 | 7 | 1.000 | 0.000 | 1.000 | 1.000 | 0.123 | TRUE | Relative dilution (descriptive) |
+| Ophir | PO4_P | WY2025 | 17 | 1.010 | 0.031 | 0.945 | 1.076 | 0.748 | FALSE | Relative enrichment (descriptive) |
+| Ophir | PO4_P | WY2026 | 7 | 0.974 | 0.072 | 0.799 | 1.150 | 0.731 | FALSE | Relative dilution (descriptive) |
+| Ophir | Pb | WY2025 | 18 | 1.070 | 0.067 | 0.930 | 1.211 | 0.307 | TRUE | Relative enrichment (descriptive) |
+| Ophir | Pb | WY2026 | 8 | 0.882 | 0.124 | 0.588 | 1.175 | 0.372 | FALSE | Relative dilution (descriptive) |
+| Ophir | Sr | WY2025 | 18 | 1.006 | 0.011 | 0.983 | 1.030 | 0.578 | FALSE | Relative enrichment (descriptive) |
+| Ophir | Sr | WY2026 | 9 | 1.069 | 0.034 | 0.991 | 1.148 | 0.076 | TRUE | Relative enrichment (descriptive) |
+| Ophir | TDN | WY2025 | 18 | 0.957 | 0.028 | 0.898 | 1.016 | 0.143 | TRUE | Relative dilution (descriptive) |
+| Ophir | TDN | WY2026 | 9 | 0.858 | 0.068 | 0.700 | 1.015 | 0.071 | TRUE | Relative dilution (descriptive) |
+| Ophir | TOC | WY2025 | 14 | 1.016 | 0.006 | 1.002 | 1.029 | 0.029 | TRUE | Relative enrichment (descriptive) |
+| Ophir | TOC | WY2026 | 9 | 0.946 | 0.031 | 0.875 | 1.017 | 0.120 | TRUE | Relative dilution (descriptive) |
+| Ophir | TSS | WY2025 | 15 | 1.116 | 0.076 | 0.952 | 1.279 | 0.152 | TRUE | Relative enrichment (descriptive) |
+| Ophir | TSS | WY2026 | 8 | 0.921 | 0.079 | 0.734 | 1.108 | 0.350 | TRUE | Relative dilution (descriptive) |
+| Ophir | Zn | WY2025 | 18 | 0.806 | 0.071 | 0.655 | 0.956 | 0.015 | TRUE | Relative dilution (descriptive) |
+| Ophir | Zn | WY2026 | 9 | 0.905 | 0.077 | 0.727 | 1.083 | 0.253 | TRUE | Relative dilution (descriptive) |
 
 ## 7. Plot DMCs
 
 ``` r
-plot_dmc <- function(analyte_name) {
-  dat <- dmc_long %>% filter(analyte == analyte_name)
-  mod <- models_tbl %>% filter(analyte == analyte_name, is.finite(slope)) %>%
-    mutate(label = sprintf("β = %.2f", slope))
-  ggplot(dat, aes(Q_c_norm, load_c_norm)) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey65") +
-    geom_abline(data = mod, aes(slope = slope, intercept = 0),
-                inherit.aes = FALSE, color = "black", linewidth = 0.6) +
-    geom_path(color = "grey55", linewidth = 0.7, na.rm = TRUE) +
-    geom_point(aes(color = tsf), size = 2.5, na.rm = TRUE) +
-    geom_text(data = mod, aes(x = 0.05, y = 0.94, label = label),
-              inherit.aes = FALSE, hjust = 0, size = 4) +
-    facet_wrap(~site, nrow = 1, drop = FALSE) +
-    scale_color_viridis_c(option = "plasma", direction = -1, name = "Days since fire") +
-    coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
-    labs(x = "Norm. cumulative streamflow",
-         y = paste("Norm. cumulative", analyte_name)) +
-    theme_minimal(base_size = 12) +
-    theme(legend.position = "bottom", panel.grid.minor = element_blank())
-}
-
 ### better visual
 # Updated DMC plotting function
 
@@ -631,8 +716,12 @@ plot_dmc <- function(analyte_name) {
       is.finite(slope)
     ) %>%
     mutate(
-      label = sprintf("β = %.2f", slope)
+      label   = sprintf("%s \u03b2 = %.2f", wy_lab, slope),
+      label_y = if_else(wy_lab == "WY2025", 0.95, 0.85)
     )
+
+  # Only draw trend lines whose slope +/- 1 SE does not cover 1
+  mod_line <- mod %>% filter(show_line)
 
   ggplot(dat, aes(Q_c_norm, load_c_norm)) +
 
@@ -640,22 +729,26 @@ plot_dmc <- function(analyte_name) {
     geom_abline(
       slope = 1,
       intercept = 0,
-      linetype = "dashed",
-      color = "grey65",
-      linewidth = 0.5
-    ) +
-
-    # Estimated slope
-    geom_abline(
-      data = mod,
-      aes(slope = slope, intercept = 0),
-      inherit.aes = FALSE,
-      color = "black",
+      linetype = "dotted",
+      color = "grey80",
       linewidth = 0.6
     ) +
 
-    # Cumulative trajectory
+    # Estimated slope, one line per water year (red = WY2025, blue = WY2026);
+    # mod_line already excludes fits whose slope +/- 1 SE covers 1
+    lapply(wy_levels, function(w) {
+      geom_abline(
+        data = filter(mod_line, wy_lab == w),
+        aes(slope = slope, intercept = 0),
+        inherit.aes = FALSE,
+        color = wy_line_cols[[w]],
+        linewidth = 0.6
+      )
+    }) +
+
+    # Cumulative trajectory, one path per water year
     geom_path(
+      aes(group = wy_lab),
       color = "grey55",
       linewidth = 0.6,
       na.rm = TRUE
@@ -663,24 +756,27 @@ plot_dmc <- function(analyte_name) {
 
     # Observations
     geom_point(
-      aes(color = tsf),
+      aes(color = tsf, shape = wy_lab),
       size = 2,
       na.rm = TRUE
     ) +
 
-    # Slope annotations
-    geom_text(
-      data = mod,
-      aes(
-        x = 0.05,
-        y = 0.88,
-        label = label
-      ),
-      inherit.aes = FALSE,
-      hjust = 0,
-      vjust = 1,
-      size = 2.7
-    ) +
+    # Slope annotations, colored to match each water year's trend line
+    lapply(wy_levels, function(w) {
+      geom_text(
+        data = filter(mod, wy_lab == w),
+        aes(
+          x = 0.05,
+          y = label_y,
+          label = label
+        ),
+        inherit.aes = FALSE,
+        color = wy_line_cols[[w]],
+        hjust = 0,
+        vjust = 1,
+        size = 2.7
+      )
+    }) +
 
     # Site panels
     facet_wrap(
@@ -693,7 +789,18 @@ plot_dmc <- function(analyte_name) {
     scale_color_viridis_c(
       option = "plasma",
       direction = -1,
-      name = "Days since fire"
+      name = "Days since fire",
+      limits = tsf_limits,
+      breaks = c(0, 200, 400),
+      oob = scales::squish
+    ) +
+
+    # Water-year encodings (shared legend)
+    scale_shape_manual(
+      name = "Water year",
+      values = wy_shapes,
+      limits = wy_levels,
+      drop = FALSE
     ) +
 
     # Consistent axes
@@ -823,10 +930,11 @@ independent-error change-point test.
 
 ``` r
 residuals_long <- dmc_long %>%
-  left_join(models_tbl %>% select(site, analyte, slope), by = c("site", "analyte")) %>%
+  left_join(models_tbl %>% select(site, analyte, wy_lab, slope),
+            by = c("site", "analyte", "wy_lab")) %>%
   mutate(fitted_norm = slope * Q_c_norm,
          resid_norm = load_c_norm - fitted_norm) %>%
-  group_by(site, analyte) %>%
+  group_by(site, analyte, wy_lab) %>%
   arrange(date, .by_group = TRUE) %>%
   mutate(cumul_resid = cumsum(resid_norm)) %>%
   ungroup()
@@ -836,11 +944,14 @@ plot_dmc_residuals <- function(analyte_name) {
     filter(analyte == analyte_name) %>%
     ggplot(aes(date, cumul_resid)) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "grey65") +
-    geom_line(color = "grey45") +
-    geom_point(aes(color = tsf), size = 2) +
+    geom_line(aes(group = wy_lab), color = "grey45") +
+    geom_point(aes(color = tsf, shape = wy_lab), size = 2) +
     facet_wrap(~site, nrow = 1) + #scales = "free_y")
     scale_color_viridis_c(option = "plasma", direction = -1,
-                          name = "Days since fire") +
+                          name = "Days since fire",
+                          limits = tsf_limits, oob = scales::squish) +
+    scale_shape_manual(name = "Water year", values = wy_shapes,
+                       limits = wy_levels, drop = FALSE) +
     labs(title = paste("DMC residuals:", analyte_name),
          x = NULL, y = "Residual") +
     theme_minimal(base_size = 12) +
